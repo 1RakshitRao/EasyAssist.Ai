@@ -1,0 +1,42 @@
+[
+  {
+    "id": "hr-pto-policy",
+    "title": "PTO Accrual Policy",
+    "content": "Full-time employees accrue 20 days of paid time off (PTO) per calendar year. Accrual begins on the hire date at a rate of 1.67 days per month. Unused PTO up to 5 days may roll over to the next year. Requests should be submitted in the HR portal at least 2 weeks in advance for absences longer than 3 days."
+  },
+  {
+    "id": "hr-sick-leave",
+    "title": "Sick Leave",
+    "content": "Employees receive 10 sick days per year separate from PTO. Sick leave may be used for personal illness, medical appointments, or caring for an immediate family member. Absences longer than 3 consecutive days require a doctor's note submitted to HR."
+  },
+  {
+    "id": "hr-remote-work",
+    "title": "Remote Work Policy",
+    "content": "Eligible employees may work remotely up to 3 days per week with manager approval. Core collaboration hours are 10:00–15:00 local time. Employees must maintain a secure home network and use the company VPN for all systems access."
+  },
+  {
+    "id": "hr-parental-leave",
+    "title": "Parental Leave",
+    "content": "Primary caregivers receive 12 weeks of paid parental leave. Secondary caregivers receive 4 weeks. Leave must begin within 6 months of birth or adoption. Notify HR at least 30 days before the expected start date when possible."
+  },
+  {
+    "id": "hr-benefits-enrollment",
+    "title": "Benefits Enrollment",
+    "content": "Open enrollment runs each November. New hires must enroll within 30 days of start date. Medical, dental, vision, and 401(k) are available. Changes outside open enrollment require a qualifying life event."
+  },
+  {
+    "id": "hr-harassment-policy",
+    "title": "Anti-Harassment Policy",
+    "content": "Ampcus prohibits harassment of any kind including sexual harassment, bullying, and discrimination. Report concerns to HR, your manager, or the anonymous ethics hotline. Retaliation against reporters is strictly forbidden. High-severity reports are escalated to HR leadership within 24 hours."
+  },
+  {
+    "id": "hr-performance-reviews",
+    "title": "Performance Reviews",
+    "content": "Formal performance reviews occur twice per year in June and December. Goals are set in Workday. Mid-year check-ins are required for all full-time staff. Ratings feed into merit and bonus decisions."
+  },
+  {
+    "id": "hr-expense-reimbursement",
+    "title": "Expense Reimbursement",
+    "content": "Submit expenses in Concur within 30 days of purchase. Receipts are required for amounts over $25. Manager approval is needed before finance processes payment. Travel must follow the company travel policy."
+  }
+]

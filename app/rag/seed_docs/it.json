@@ -1,0 +1,42 @@
+[
+  {
+    "id": "it-vpn-setup",
+    "title": "VPN Setup Guide",
+    "content": "Install the company VPN client from the IT software portal. Sign in with your corporate SSO credentials. Connect before accessing internal apps, file shares, or production systems. If connection fails, reboot and clear the VPN cache, then contact IT if the issue persists."
+  },
+  {
+    "id": "it-password-reset",
+    "title": "Password Reset",
+    "content": "Reset your password at https://password.ampcus.internal or via the Microsoft self-service portal. Passwords must be at least 14 characters with mixed case, a number, and a symbol. Passwords expire every 90 days. Locked accounts unlock automatically after 30 minutes or via IT helpdesk."
+  },
+  {
+    "id": "it-mfa",
+    "title": "Multi-Factor Authentication",
+    "content": "MFA is required for all employees. Use the company authenticator app or hardware key. Lost phone: contact IT to temporarily enroll a backup method. Do not share MFA codes with anyone, including IT staff."
+  },
+  {
+    "id": "it-laptop-request",
+    "title": "Laptop Request",
+    "content": "New or replacement laptops are requested via the IT Service Catalog. Standard issue is a company-managed Windows or MacBook. Approvals: manager then IT asset owner. Typical delivery is 5–7 business days."
+  },
+  {
+    "id": "it-software-install",
+    "title": "Software Installation",
+    "content": "Approved software is available in the Company Portal / Self Service app. Unlisted software requires an IT security review ticket. Do not install pirated or personal unlicensed software on company devices."
+  },
+  {
+    "id": "it-email-phishing",
+    "title": "Phishing Reporting",
+    "content": "Report suspicious email with the Report Phish button in Outlook. Do not click links or open attachments. IT Security investigates all reports. Confirmed phishing is blocked org-wide."
+  },
+  {
+    "id": "it-wifi",
+    "title": "Office Wi-Fi",
+    "content": "Connect to Ampcus-Corp using SSO. Guest network Ampcus-Guest is for visitors only and has no access to internal systems. For conference rooms use Ampcus-Corp with your device certificate."
+  },
+  {
+    "id": "it-incident-severity",
+    "title": "IT Incident Severity",
+    "content": "P1: production outage affecting many users — call the on-call bridge. P2: major feature degraded. P3: single-user or minor issue — submit a ticket. Data breach suspicion is always treated as P1 and escalated to security."
+  }
+]

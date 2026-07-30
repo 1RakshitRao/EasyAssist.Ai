@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Ampcus Helpdesk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand" title="Ampcus — Home chat" role="button" tabindex="0">
+        <img src="/static/ampcus_inc_logo.jpg" alt="Ampcus" />
+      </div>
+      <nav>
+        <button class="nav-btn active" data-view="chat" title="Chat" aria-label="Chat">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        </button>
+        <button class="nav-btn" data-view="dashboard" title="Dashboard" aria-label="Dashboard">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+        </button>
+        <button class="nav-btn" data-view="kb" title="Knowledge base" aria-label="Knowledge base">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M8 7h8M8 11h6"/></svg>
+        </button>
+        <button class="nav-btn" data-view="tickets" title="Unknown tickets" aria-label="Unknown tickets">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 5H5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9z"/><path d="M15 5v4h4"/></svg>
+        </button>
+        <button class="nav-btn" data-view="escalations" title="Escalations" aria-label="Escalations">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </button>
+        <button class="nav-btn" data-view="insights" title="Query insights" aria-label="Query insights">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-6 4 3 5-8"/></svg>
+        </button>
+      </nav>
+    </aside>
+
+    <main class="main">
+      <!-- DASHBOARD -->
+      <section id="view-dashboard" class="view">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Ampcus Helpdesk</p>
+            <h1>Dashboard</h1>
+          </div>
+          <div class="topbar-actions">
+            <button id="reset-session" class="chip danger" type="button" title="Clear KPIs, recent queries, and semantic cache">Reset session</button>
+            <button id="refresh-stats" class="chip">Refresh</button>
+            <span id="provider-pill" class="chip muted">—</span>
+          </div>
+        </header>
+
+        <div class="kpi-row" id="kpi-row">
+          <article class="kpi-card">
+            <p class="kpi-label">Total Queries</p>
+            <h2 id="kpi-queries">0</h2>
+            <p class="kpi-sub" id="kpi-queries-sub">session</p>
+          </article>
+          <article class="kpi-card">
+            <p class="kpi-label">Cache Hit Rate</p>
+            <h2 id="kpi-cache">0%</h2>
+            <p class="kpi-sub positive" id="kpi-cache-sub">0 hits</p>
+          </article>
+          <article class="kpi-card">
+            <p class="kpi-label">Open Tickets</p>
+            <h2 id="kpi-tickets">0</h2>
+            <p class="kpi-sub" id="kpi-tickets-sub">unknown / HITL</p>
+          </article>
+          <article class="kpi-card">
+            <p class="kpi-label">Open Escalations</p>
+            <h2 id="kpi-escalations">0</h2>
+            <p class="kpi-sub" id="kpi-escalations-sub">high-severity HITL</p>
+          </article>
+        </div>
+
+        <div class="kpi-row kpi-row-secondary">
+          <article class="kpi-card">
+            <p class="kpi-label">Avg Latency</p>
+            <h2 id="kpi-latency">0ms</h2>
+            <p class="kpi-sub" id="kpi-latency-sub">end-to-end</p>
+          </article>
+          <article class="kpi-card wide-kpi">
+            <p class="kpi-label">Session escalations fired</p>
+            <h2 id="kpi-esc-session">0</h2>
+            <p class="kpi-sub">includes resolved this session</p>
+          </article>
+        </div>
+
+        <div class="grid-2">
+          <article class="panel">
+            <div class="panel-head">
+              <h3>Department Mix</h3>
+              <p>Classifier routing volume</p>
+            </div>
+            <div id="dept-bars" class="bars"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head">
+              <h3>Recent Queries</h3>
+              <p>Latest pipeline results</p>
+            </div>
+            <div id="recent-list" class="recent-list"></div>
+          </article>
+        </div>
+
+        <article class="panel promo">
+          <h3>Session overview</h3>
+          <p>Query volume, cache hits, tickets, and routing mix for this server session. Open Chat from the sidebar to ask the helpdesk.</p>
+        </article>
+      </section>
+
+      <!-- CHAT (home) -->
+      <section id="view-chat" class="view active chat-view chat-home">
+        <div class="chat-stage">
+          <div class="chat-home-hero" id="chat-home-hero">
+            <h1 class="chat-greeting">
+              <span class="chat-spark" aria-hidden="true"></span>
+              Hello, Rakshit!
+            </h1>
+          </div>
+
+          <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
+
+          <div class="composer-wrap">
+            <form id="chat-form" class="composer" autocomplete="off">
+              <textarea
+                id="chat-input"
+                rows="2"
+                placeholder="How can I help you today?"
+                required
+              ></textarea>
+              <div class="composer-toolbar">
+                <button type="button" class="icon-btn" title="Attach" aria-label="Attach" id="chat-attach">
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v14M5 12h14"/>
+                  </svg>
+                </button>
+                <div class="composer-toolbar-right">
+                  <button type="button" class="icon-btn" title="Voice" aria-label="Voice" id="chat-mic">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="9" y="2" width="6" height="11" rx="3"/>
+                      <path d="M5 10a7 7 0 0 0 14 0M12 17v4M8 21h8"/>
+                    </svg>
+                  </button>
+                  <button type="button" class="icon-btn" title="Voice mode" aria-label="Voice mode" id="chat-wave">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                      <rect x="3" y="9" width="2.5" height="6" rx="1"/>
+                      <rect x="8" y="6" width="2.5" height="12" rx="1"/>
+                      <rect x="13" y="4" width="2.5" height="16" rx="1"/>
+                      <rect x="18" y="8" width="2.5" height="8" rx="1"/>
+                    </svg>
+                  </button>
+                  <button type="submit" class="icon-btn send-btn" title="Send" aria-label="Send" id="chat-send">
+                    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2">
+                      <path d="M5 12h14M13 6l6 6-6 6"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          <aside class="chat-meta" id="chat-meta" hidden>
+            <div class="chat-meta-inner">
+              <span><b>Dept</b> <i id="meta-dept">—</i></span>
+              <span><b>Severity</b> <i id="meta-sev">—</i></span>
+              <span><b>Cached</b> <i id="meta-cached">—</i></span>
+              <span><b>Sim</b> <i id="meta-sim">—</i></span>
+              <span><b>Escalated</b> <i id="meta-esc">—</i></span>
+              <span><b>Ticket</b> <i id="meta-ticket">—</i></span>
+              <span class="meta-wide"><b>Sources</b> <i id="meta-sources">—</i></span>
+              <span class="meta-wide"><b>Model</b> <i id="meta-model">—</i></span>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- KNOWLEDGE BASE -->
+      <section id="view-kb" class="view">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Official sources</p>
+            <h1>Knowledge Base</h1>
+          </div>
+          <button id="refresh-kb" class="chip">Refresh</button>
+        </header>
+        <p class="section-blurb">
+          Policies and protocols the agents retrieve from, grouped by department.
+          Titles are the official document names stored in each collection.
+        </p>
+        <div class="kb-tabs" id="kb-tabs" role="tablist"></div>
+        <div id="kb-panel" class="kb-panel"></div>
+        <div id="kb-pagination" class="pagination" hidden></div>
+      </section>
+
+      <!-- UNKNOWN TICKETS -->
+      <section id="view-tickets" class="view">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Human in the loop</p>
+            <h1>Unknown Tickets</h1>
+          </div>
+          <button id="refresh-tickets" class="chip">Refresh</button>
+        </header>
+        <p class="section-blurb">Opened only when a question is not found in any knowledge base. Assign a department and promote an answer into the KB.</p>
+        <div id="tickets-list" class="tickets-list"></div>
+        <div id="tickets-pagination" class="pagination" hidden></div>
+      </section>
+
+      <!-- ESCALATIONS -->
+      <section id="view-escalations" class="view">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Human in the loop</p>
+            <h1>Escalations</h1>
+          </div>
+          <button id="refresh-escalations" class="chip">Refresh</button>
+        </header>
+        <p class="section-blurb">High-severity legal/HR chats that need human review. The bot still answers from the KB, and an open escalation ticket is created for follow-up.</p>
+        <div id="escalations-list" class="tickets-list"></div>
+        <div id="escalations-pagination" class="pagination" hidden></div>
+      </section>
+
+      <!-- INSIGHTS -->
+      <section id="view-insights" class="view">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Observability</p>
+            <h1>Query Insights</h1>
+          </div>
+          <button id="refresh-insights" class="chip">Refresh</button>
+        </header>
+        <p class="section-blurb">
+          Per-query model routing, classification, severity, latency, and estimated USD cost
+          (Anthropic-equivalent Haiku/Sonnet/Opus rates) versus an always-Opus baseline.
+        </p>
+
+        <div class="kpi-row">
+          <article class="kpi-card">
+            <p class="kpi-label">Blended cost (session)</p>
+            <h2 id="ins-cost-actual">$0</h2>
+            <p class="kpi-sub" id="ins-cost-actual-sub">smart routing</p>
+          </article>
+          <article class="kpi-card">
+            <p class="kpi-label">Always-Opus cost</p>
+            <h2 id="ins-cost-opus">$0</h2>
+            <p class="kpi-sub">counterfactual</p>
+          </article>
+          <article class="kpi-card">
+            <p class="kpi-label">Savings</p>
+            <h2 id="ins-savings">$0</h2>
+            <p class="kpi-sub positive" id="ins-savings-pct">0%</p>
+          </article>
+          <article class="kpi-card">
+            <p class="kpi-label">Avg latency</p>
+            <h2 id="ins-latency">0ms</h2>
+            <p class="kpi-sub" id="ins-avg-cost">avg $/query</p>
+          </article>
+        </div>
+
+        <div class="grid-2">
+          <article class="panel">
+            <div class="panel-head">
+              <h3>Cost per query</h3>
+              <p>Actual vs always Opus</p>
+            </div>
+            <canvas id="chart-cost" width="640" height="260"></canvas>
+            <div class="legend">
+              <span class="legend-item"><i class="swatch actual"></i> Actual (routed)</span>
+              <span class="legend-item"><i class="swatch opus"></i> Always Opus</span>
+            </div>
+          </article>
+          <article class="panel">
+            <div class="panel-head">
+              <h3>Latency per query</h3>
+              <p>End-to-end wall time (ms)</p>
+            </div>
+            <canvas id="chart-latency" width="640" height="260"></canvas>
+          </article>
+        </div>
+
+        <div class="grid-2">
+          <article class="panel">
+            <div class="panel-head">
+              <h3>Model role mix</h3>
+              <p>Haiku / Sonnet / Opus attributions</p>
+            </div>
+            <div id="role-bars" class="bars"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head">
+              <h3>Severity mix</h3>
+              <p>Classifier severity labels</p>
+            </div>
+            <div id="sev-bars" class="bars"></div>
+          </article>
+        </div>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h3>Recent classification &amp; costing</h3>
+            <p>Model used, department, severity, latency, cost</p>
+          </div>
+          <div class="table-wrap">
+            <table class="insights-table" id="insights-table">
+              <thead>
+                <tr>
+                  <th>Question</th>
+                  <th>Dept</th>
+                  <th>Severity</th>
+                  <th>Model</th>
+                  <th>Role</th>
+                  <th>Latency</th>
+                  <th>Actual $</th>
+                  <th>Opus $</th>
+                  <th>Saved</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

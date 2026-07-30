@@ -1,0 +1,211 @@
+"""API / pipeline integration tests — no live Ollama/Anthropic required."""
+
+from __future__ import annotations
+
+
+def test_health_and_home(client):
+    health = client.get("/health")
+    assert health.status_code == 200
+    body = health.json()
+    assert body["status"] == "ok"
+    assert body["chroma_collections"]["hr"] >= 1
+    assert body["chroma_collections"]["it"] >= 1
+    assert body["chroma_collections"]["compliance"] >= 1
+    assert body["chroma_collections"]["legal"] >= 1
+
+    home = client.get("/")
+    assert home.status_code == 200
+    assert b"Ampcus" in home.content
+
+
+def test_kb_lists_department_protocols(client):
+    res = client.get("/kb")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["total_documents"] >= 32
+    depts = {d["department"]: d for d in data["departments"]}
+    assert set(depts) == {"hr", "it", "compliance", "legal"}
+    assert any(doc["title"] == "PTO Accrual Policy" for doc in depts["hr"]["documents"])
+    assert any(doc["title"] == "VPN Setup Guide" for doc in depts["it"]["documents"])
+
+
+def test_query_hr_pto_grounded(client):
+    res = client.post("/query", json={"question": "How many PTO days do I get per year?"})
+    assert res.status_code == 200
+    data = res.json()
+    assert data["department"] == "hr"
+    assert data["severity"] == "routine"
+    assert data["context_used"] is True
+    assert data["ticket_id"] is None
+    assert data["escalated"] is False
+    assert data["cached"] is False
+    assert data["sources"]
+    assert "20" in data["answer"] or "PTO" in data["answer"] or "paid time" in data["answer"].lower()
+
+
+def test_query_it_password_and_semantic_cache(client):
+    q = "How do I reset my password?"
+    first = client.post("/query", json={"question": q})
+    assert first.status_code == 200
+    a = first.json()
+    assert a["department"] == "it"
+    assert a["context_used"] is True
+    assert a["cached"] is False
+
+    second = client.post("/query", json={"question": q})
+    assert second.status_code == 200
+    b = second.json()
+    assert b["cached"] is True
+    assert b["department"] == "it"
+    assert b["answer"] == a["answer"]
+
+
+def test_query_unknown_creates_ticket(client):
+    res = client.post(
+        "/query",
+        json={"question": "What is the cafeteria sushi menu this Friday?"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["department"] == "unknown"
+    assert data["ticket_id"]
+    assert data["model_used"] == "hitl_ticket"
+    assert data["context_used"] is False
+
+    tickets = client.get("/tickets", params={"status": "open", "ticket_type": "unknown"})
+    assert tickets.status_code == 200
+    items = tickets.json()
+    assert any(t["id"] == data["ticket_id"] for t in items)
+    match = next(t for t in items if t["id"] == data["ticket_id"])
+    assert match["reason"] == "kb_not_recognized"
+
+
+def test_query_high_severity_escalation(client):
+    res = client.post(
+        "/query",
+        json={"question": "I think we had a customer data breach — what should I do?"},
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert data["department"] == "legal"
+    assert data["severity"] == "high"
+    assert data["escalated"] is True
+    assert data["ticket_id"]
+    assert data["context_used"] is True
+
+    esc = client.get("/tickets", params={"status": "open", "ticket_type": "escalation"})
+    assert esc.status_code == 200
+    assert any(t["id"] == data["ticket_id"] for t in esc.json())
+
+
+def test_ingest_unique_then_dedup_conflict(client):
+    unique = client.post(
+        "/ingest",
+        json={
+            "department": "hr",
+            "title": "Desk Hoteling Pilot Rules",
+            "content": "Reserve desks weekly in the facilities portal before 5pm Friday.",
+        },
+    )
+    assert unique.status_code == 200
+    assert unique.json()["status"] == "ok"
+    doc_id = unique.json()["doc_id"]
+
+    # Exact title duplicate
+    dup_title = client.post(
+        "/ingest",
+        json={
+            "department": "hr",
+            "title": "desk hoteling pilot rules",
+            "content": "Totally different body text that should still collide on title.",
+        },
+    )
+    assert dup_title.status_code == 409
+    detail = dup_title.json()["detail"]
+    assert detail["duplicate_of"] == doc_id
+    assert detail["reason"] == "exact_title"
+
+    # Near-duplicate body / paraphrase of existing seed PTO policy
+    near = client.post(
+        "/ingest",
+        json={
+            "department": "hr",
+            "title": "Paid Time Off Yearly Accrual",
+            "content": (
+                "Full-time employees accrue 20 days of paid time off (PTO) per calendar year. "
+                "Accrual begins on the hire date at a rate of 1.67 days per month."
+            ),
+        },
+    )
+    assert near.status_code == 409
+    assert near.json()["detail"]["reason"] in {"embedding_near_duplicate", "exact_title"}
+
+
+def test_promote_unknown_ticket_into_kb(client):
+    q = client.post(
+        "/query",
+        json={"question": "Where do I park my electric scooter overnight?"},
+    )
+    assert q.status_code == 200
+    ticket_id = q.json()["ticket_id"]
+    assert ticket_id
+
+    promote = client.post(
+        f"/tickets/{ticket_id}/promote",
+        json={
+            "department": "it",
+            "title": "Electric Scooter Parking",
+            "answer": "Park scooters in the garage rack on B1 and register the serial in the IT portal.",
+        },
+    )
+    assert promote.status_code == 200
+    body = promote.json()
+    assert body["status"] == "resolved"
+    assert body["kb_doc_id"]
+    assert body["assigned_department"] == "it"
+
+    open_unknown = client.get(
+        "/tickets", params={"status": "open", "ticket_type": "unknown"}
+    )
+    assert ticket_id not in {t["id"] for t in open_unknown.json()}
+
+    kb = client.get("/kb", params={"department": "it"})
+    titles = [d["title"] for d in kb.json()["departments"][0]["documents"]]
+    assert "Electric Scooter Parking" in titles
+
+
+def test_resolve_escalation_ticket(client):
+    q = client.post(
+        "/query",
+        json={"question": "I need to report workplace harassment immediately"},
+    )
+    assert q.status_code == 200
+    data = q.json()
+    assert data["escalated"] is True
+    ticket_id = data["ticket_id"]
+
+    resolved = client.patch(
+        f"/tickets/{ticket_id}/resolve",
+        json={"status": "resolved", "admin_notes": "HR case opened"},
+    )
+    assert resolved.status_code == 200
+    assert resolved.json()["status"] == "resolved"
+
+    open_esc = client.get(
+        "/tickets", params={"status": "open", "ticket_type": "escalation"}
+    )
+    assert ticket_id not in {t["id"] for t in open_esc.json()}
+
+
+def test_stats_and_reset_session(client):
+    client.post("/query", json={"question": "How many PTO days do I get per year?"})
+    stats = client.get("/stats")
+    assert stats.status_code == 200
+    assert stats.json()["total_queries"] >= 1
+    assert stats.json()["recent"]
+
+    reset = client.post("/stats/reset")
+    assert reset.status_code == 200
+    assert reset.json()["status"] == "ok"
+    assert reset.json()["stats"]["total_queries"] == 0
+    assert reset.json()["stats"]["recent"] == []

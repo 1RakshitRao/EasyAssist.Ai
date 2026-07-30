@@ -1,0 +1,42 @@
+[
+  {
+    "id": "legal-nda",
+    "title": "NDA Guidance",
+    "content": "Mutual NDAs are available from Legal via the contract portal. Do not share Confidential information with third parties without a signed NDA. Customer NDAs must be reviewed by Legal before signature if non-standard terms are requested."
+  },
+  {
+    "id": "legal-contract-review",
+    "title": "Contract Review Process",
+    "content": "All contracts above $50,000 or with unusual liability terms require Legal review. Submit via the Legal intake form with the draft and business summary. Standard turnaround is 5 business days."
+  },
+  {
+    "id": "legal-ip-policy",
+    "title": "Intellectual Property",
+    "content": "Work product created in the course of employment is company IP. Open-source contributions require Legal and Engineering approval. Do not use customer data to train external models without approval."
+  },
+  {
+    "id": "legal-litigation-hold",
+    "title": "Litigation Hold",
+    "content": "If you receive a litigation hold notice, preserve all related documents and email. Do not delete, alter, or auto-purge relevant data. Questions go only to Legal — do not discuss the matter broadly."
+  },
+  {
+    "id": "legal-data-breach",
+    "title": "Data Breach Response",
+    "content": "Suspected data breaches must be reported immediately to Legal and Security. Do not notify customers yourself. Legal coordinates regulatory notification timelines. This is always high severity."
+  },
+  {
+    "id": "legal-employment-claims",
+    "title": "Employment Claims",
+    "content": "Threats of lawsuits, discrimination claims, or termination disputes must be escalated to Legal and HR immediately. Do not admit liability or offer settlements without Legal guidance."
+  },
+  {
+    "id": "legal-marketing-claims",
+    "title": "Marketing Claims Review",
+    "content": "Public product claims, case studies, and logos of customers require Legal review before publication. Customer quotes need documented approval from the customer."
+  },
+  {
+    "id": "legal-export-controls",
+    "title": "Export Controls",
+    "content": "Certain software and technical data may be export-controlled. Do not share controlled technology with restricted countries or parties. Contact Legal before international transfers of sensitive technical materials."
+  }
+]

@@ -1,0 +1,42 @@
+[
+  {
+    "id": "comp-data-classification",
+    "title": "Data Classification",
+    "content": "Data is classified as Public, Internal, Confidential, or Restricted. Restricted data (SSNs, payment cards, health data) must be encrypted at rest and in transit. Do not store Restricted data on personal devices or unsanctioned cloud apps."
+  },
+  {
+    "id": "comp-acceptable-use",
+    "title": "Acceptable Use Policy",
+    "content": "Company systems are for business use. Limited personal use is allowed if it does not interfere with work or security. Prohibited: illegal content, cryptocurrency mining, sharing credentials, and bypassing security controls."
+  },
+  {
+    "id": "comp-retention",
+    "title": "Records Retention",
+    "content": "Email is retained for 7 years. HR records follow statutory minimums by jurisdiction. Delete or archive per the retention schedule; do not keep shadow copies of Restricted data past retention."
+  },
+  {
+    "id": "comp-vendor-risk",
+    "title": "Vendor Risk Assessment",
+    "content": "New vendors handling Confidential or Restricted data require a security questionnaire and DPA before contract signature. Procurement will not process POs without Compliance approval for high-risk vendors."
+  },
+  {
+    "id": "comp-incident-reporting",
+    "title": "Compliance Incident Reporting",
+    "content": "Report suspected policy violations or regulatory issues to Compliance within 24 hours. Use the ethics hotline for anonymous reports. Do not investigate privately if it may destroy evidence."
+  },
+  {
+    "id": "comp-gdpr-basics",
+    "title": "GDPR and Privacy Basics",
+    "content": "Personal data of EU residents must have a lawful basis for processing. Access, correction, and deletion requests go to privacy@ampcus.com and must be acknowledged within 5 business days."
+  },
+  {
+    "id": "comp-training",
+    "title": "Mandatory Compliance Training",
+    "content": "All employees complete annual security awareness and code of conduct training. New hires must finish within 14 days of start. Managers track completion in the LMS."
+  },
+  {
+    "id": "comp-gifts",
+    "title": "Gifts and Entertainment",
+    "content": "Gifts over $75 USD require Compliance pre-approval. Cash or cash equivalents are never allowed. Government officials have stricter limits — contact Compliance before offering anything of value."
+  }
+]
