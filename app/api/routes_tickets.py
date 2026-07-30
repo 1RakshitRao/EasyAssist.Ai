@@ -6,6 +6,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.auth.deps import AgentUser
 from app.models.schemas import (
     TicketAssignRequest,
     TicketPromoteRequest,
@@ -22,11 +23,16 @@ def _to_response(ticket: dict) -> TicketResponse:
     ticket = dict(ticket)
     ticket.setdefault("ticket_type", "unknown")
     ticket.setdefault("severity", "routine")
+    ticket.setdefault("created_by_user_id", None)
+    ticket.setdefault("created_by_email", None)
+    ticket.setdefault("updated_by_user_id", None)
+    ticket.setdefault("updated_by_email", None)
     return TicketResponse(**ticket)
 
 
 @router.get("", response_model=List[TicketResponse])
 def get_tickets(
+    _user: AgentUser,
     status: Optional[str] = Query(default=None),
     ticket_type: Optional[str] = Query(
         default=None, description="unknown | escalation"
@@ -39,7 +45,7 @@ def get_tickets(
 
 
 @router.get("/{ticket_id}", response_model=TicketResponse)
-def get_ticket_by_id(ticket_id: str) -> TicketResponse:
+def get_ticket_by_id(ticket_id: str, _user: AgentUser) -> TicketResponse:
     ticket = get_ticket(ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="ticket not found")
@@ -47,7 +53,9 @@ def get_ticket_by_id(ticket_id: str) -> TicketResponse:
 
 
 @router.patch("/{ticket_id}/assign", response_model=TicketResponse)
-def assign_ticket(ticket_id: str, req: TicketAssignRequest) -> TicketResponse:
+def assign_ticket(
+    ticket_id: str, req: TicketAssignRequest, user: AgentUser
+) -> TicketResponse:
     dept = req.department.lower().strip()
     if dept not in DEPARTMENTS:
         raise HTTPException(
@@ -66,13 +74,17 @@ def assign_ticket(ticket_id: str, req: TicketAssignRequest) -> TicketResponse:
         department=dept,
         status="assigned",
         admin_notes=req.admin_notes,
+        updated_by_user_id=user.get("id"),
+        updated_by_email=user.get("email"),
     )
     assert updated is not None
     return _to_response(updated)
 
 
 @router.patch("/{ticket_id}/resolve", response_model=TicketResponse)
-def resolve_ticket(ticket_id: str, req: TicketResolveRequest) -> TicketResponse:
+def resolve_ticket(
+    ticket_id: str, req: TicketResolveRequest, user: AgentUser
+) -> TicketResponse:
     """Mark an escalation (or unknown) ticket reviewed/resolved without KB promote."""
     ticket = get_ticket(ticket_id)
     if not ticket:
@@ -84,13 +96,17 @@ def resolve_ticket(ticket_id: str, req: TicketResolveRequest) -> TicketResponse:
         ticket_id,
         status=status,
         admin_notes=req.admin_notes or ticket.get("admin_notes"),
+        updated_by_user_id=user.get("id"),
+        updated_by_email=user.get("email"),
     )
     assert updated is not None
     return _to_response(updated)
 
 
 @router.post("/{ticket_id}/promote", response_model=TicketResponse)
-def promote_ticket_to_kb(ticket_id: str, req: TicketPromoteRequest) -> TicketResponse:
+def promote_ticket_to_kb(
+    ticket_id: str, req: TicketPromoteRequest, user: AgentUser
+) -> TicketResponse:
     """Admin labels department (if needed) and stores Q&A into that department KB."""
     ticket = get_ticket(ticket_id)
     if not ticket:
@@ -156,6 +172,8 @@ def promote_ticket_to_kb(ticket_id: str, req: TicketPromoteRequest) -> TicketRes
         status="resolved",
         kb_doc_id=ids[0],
         admin_notes=req.admin_notes or ticket.get("admin_notes"),
+        updated_by_user_id=user.get("id"),
+        updated_by_email=user.get("email"),
     )
     assert updated is not None
     return _to_response(updated)

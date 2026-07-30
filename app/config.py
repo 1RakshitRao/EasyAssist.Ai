@@ -44,6 +44,14 @@ class Settings(BaseSettings):
 
     escalate_departments: str = "legal,hr"
 
+    # Auth (local JWT)
+    jwt_secret: str = "dev-only-change-me-ampcus-helpdesk"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 480
+    admin_email: str = "admin@ampcus.com"
+    admin_password: str = "ChangeMeAdmin1!"
+    users_path: str = ""
+
     # Anthropic-equivalent list prices (USD / million tokens) for cost dashboard
     price_haiku_input_per_mtok: float = 1.0
     price_haiku_output_per_mtok: float = 5.0

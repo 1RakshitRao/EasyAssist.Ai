@@ -1,4 +1,4 @@
-"""Shared fixtures for API integration tests (isolated Chroma + tickets)."""
+"""Shared fixtures for API integration tests (isolated Chroma + tickets + auth)."""
 
 from __future__ import annotations
 
@@ -19,9 +19,9 @@ os.environ.setdefault("TORCH_NUM_THREADS", "1")
 def client(tmp_path, monkeypatch):
     """
     Fresh app with:
-    - isolated Chroma + tickets under tmp_path
+    - isolated Chroma + tickets + users under tmp_path
     - LLM_PROVIDER=anthropic without key → heuristic classify + offline excerpts
-    - semantic cache enabled for hit/miss coverage
+    - bootstrap admin from env
     """
     chroma_dir = tmp_path / "chroma"
     chroma_dir.mkdir(parents=True, exist_ok=True)
@@ -34,6 +34,9 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("INGEST_DEDUP_MAX_DISTANCE", "0.45")
     monkeypatch.setenv("RETRIEVAL_MAX_DISTANCE", "1.15")
     monkeypatch.setenv("REDIS_URL", "")
+    monkeypatch.setenv("JWT_SECRET", "test-secret-ampcus-helpdesk")
+    monkeypatch.setenv("ADMIN_EMAIL", "admin@ampcus.com")
+    monkeypatch.setenv("ADMIN_PASSWORD", "ChangeMeAdmin1!")
 
     from app.config import get_settings
 
@@ -61,3 +64,56 @@ def client(tmp_path, monkeypatch):
     sem_mod._semantic = None
     redis_mod._cache = None
     get_settings.cache_clear()
+
+
+@pytest.fixture()
+def admin_headers(client):
+    res = client.post(
+        "/auth/login",
+        json={"email": "admin@ampcus.com", "password": "ChangeMeAdmin1!"},
+    )
+    assert res.status_code == 200, res.text
+    token = res.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture()
+def agent_headers(client, admin_headers):
+    created = client.post(
+        "/auth/users",
+        headers=admin_headers,
+        json={
+            "email": "agent@ampcus.com",
+            "password": "AgentPass12!",
+            "role": "agent",
+            "name": "Agent User",
+        },
+    )
+    assert created.status_code == 201, created.text
+    res = client.post(
+        "/auth/login",
+        json={"email": "agent@ampcus.com", "password": "AgentPass12!"},
+    )
+    assert res.status_code == 200, res.text
+    return {"Authorization": f"Bearer {res.json()['access_token']}"}
+
+
+@pytest.fixture()
+def employee_headers(client, admin_headers):
+    created = client.post(
+        "/auth/users",
+        headers=admin_headers,
+        json={
+            "email": "employee@ampcus.com",
+            "password": "EmployeePass12!",
+            "role": "employee",
+            "name": "Employee User",
+        },
+    )
+    assert created.status_code == 201, created.text
+    res = client.post(
+        "/auth/login",
+        json={"email": "employee@ampcus.com", "password": "EmployeePass12!"},
+    )
+    assert res.status_code == 200, res.text
+    return {"Authorization": f"Bearer {res.json()['access_token']}"}

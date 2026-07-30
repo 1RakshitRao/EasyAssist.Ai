@@ -18,8 +18,8 @@ def test_health_and_home(client):
     assert b"Ampcus" in home.content
 
 
-def test_kb_lists_department_protocols(client):
-    res = client.get("/kb")
+def test_kb_lists_department_protocols(client, admin_headers):
+    res = client.get("/kb", headers=admin_headers)
     assert res.status_code == 200
     data = res.json()
     assert data["total_documents"] >= 32
@@ -29,8 +29,12 @@ def test_kb_lists_department_protocols(client):
     assert any(doc["title"] == "VPN Setup Guide" for doc in depts["it"]["documents"])
 
 
-def test_query_hr_pto_grounded(client):
-    res = client.post("/query", json={"question": "How many PTO days do I get per year?"})
+def test_query_hr_pto_grounded(client, admin_headers):
+    res = client.post(
+        "/query",
+        headers=admin_headers,
+        json={"question": "How many PTO days do I get per year?"},
+    )
     assert res.status_code == 200
     data = res.json()
     assert data["department"] == "hr"
@@ -43,16 +47,16 @@ def test_query_hr_pto_grounded(client):
     assert "20" in data["answer"] or "PTO" in data["answer"] or "paid time" in data["answer"].lower()
 
 
-def test_query_it_password_and_semantic_cache(client):
+def test_query_it_password_and_semantic_cache(client, admin_headers):
     q = "How do I reset my password?"
-    first = client.post("/query", json={"question": q})
+    first = client.post("/query", headers=admin_headers, json={"question": q})
     assert first.status_code == 200
     a = first.json()
     assert a["department"] == "it"
     assert a["context_used"] is True
     assert a["cached"] is False
 
-    second = client.post("/query", json={"question": q})
+    second = client.post("/query", headers=admin_headers, json={"question": q})
     assert second.status_code == 200
     b = second.json()
     assert b["cached"] is True
@@ -60,9 +64,10 @@ def test_query_it_password_and_semantic_cache(client):
     assert b["answer"] == a["answer"]
 
 
-def test_query_unknown_creates_ticket(client):
+def test_query_unknown_creates_ticket(client, admin_headers):
     res = client.post(
         "/query",
+        headers=admin_headers,
         json={"question": "What is the cafeteria sushi menu this Friday?"},
     )
     assert res.status_code == 200
@@ -72,7 +77,11 @@ def test_query_unknown_creates_ticket(client):
     assert data["model_used"] == "hitl_ticket"
     assert data["context_used"] is False
 
-    tickets = client.get("/tickets", params={"status": "open", "ticket_type": "unknown"})
+    tickets = client.get(
+        "/tickets",
+        headers=admin_headers,
+        params={"status": "open", "ticket_type": "unknown"},
+    )
     assert tickets.status_code == 200
     items = tickets.json()
     assert any(t["id"] == data["ticket_id"] for t in items)
@@ -80,9 +89,10 @@ def test_query_unknown_creates_ticket(client):
     assert match["reason"] == "kb_not_recognized"
 
 
-def test_query_high_severity_escalation(client):
+def test_query_high_severity_escalation(client, admin_headers):
     res = client.post(
         "/query",
+        headers=admin_headers,
         json={"question": "I think we had a customer data breach — what should I do?"},
     )
     assert res.status_code == 200
@@ -93,14 +103,19 @@ def test_query_high_severity_escalation(client):
     assert data["ticket_id"]
     assert data["context_used"] is True
 
-    esc = client.get("/tickets", params={"status": "open", "ticket_type": "escalation"})
+    esc = client.get(
+        "/tickets",
+        headers=admin_headers,
+        params={"status": "open", "ticket_type": "escalation"},
+    )
     assert esc.status_code == 200
     assert any(t["id"] == data["ticket_id"] for t in esc.json())
 
 
-def test_ingest_unique_then_dedup_conflict(client):
+def test_ingest_unique_then_dedup_conflict(client, admin_headers):
     unique = client.post(
         "/ingest",
+        headers=admin_headers,
         json={
             "department": "hr",
             "title": "Desk Hoteling Pilot Rules",
@@ -111,9 +126,9 @@ def test_ingest_unique_then_dedup_conflict(client):
     assert unique.json()["status"] == "ok"
     doc_id = unique.json()["doc_id"]
 
-    # Exact title duplicate
     dup_title = client.post(
         "/ingest",
+        headers=admin_headers,
         json={
             "department": "hr",
             "title": "desk hoteling pilot rules",
@@ -125,9 +140,9 @@ def test_ingest_unique_then_dedup_conflict(client):
     assert detail["duplicate_of"] == doc_id
     assert detail["reason"] == "exact_title"
 
-    # Near-duplicate body / paraphrase of existing seed PTO policy
     near = client.post(
         "/ingest",
+        headers=admin_headers,
         json={
             "department": "hr",
             "title": "Paid Time Off Yearly Accrual",
@@ -141,9 +156,10 @@ def test_ingest_unique_then_dedup_conflict(client):
     assert near.json()["detail"]["reason"] in {"embedding_near_duplicate", "exact_title"}
 
 
-def test_promote_unknown_ticket_into_kb(client):
+def test_promote_unknown_ticket_into_kb(client, admin_headers):
     q = client.post(
         "/query",
+        headers=admin_headers,
         json={"question": "Where do I park my electric scooter overnight?"},
     )
     assert q.status_code == 200
@@ -152,6 +168,7 @@ def test_promote_unknown_ticket_into_kb(client):
 
     promote = client.post(
         f"/tickets/{ticket_id}/promote",
+        headers=admin_headers,
         json={
             "department": "it",
             "title": "Electric Scooter Parking",
@@ -165,18 +182,21 @@ def test_promote_unknown_ticket_into_kb(client):
     assert body["assigned_department"] == "it"
 
     open_unknown = client.get(
-        "/tickets", params={"status": "open", "ticket_type": "unknown"}
+        "/tickets",
+        headers=admin_headers,
+        params={"status": "open", "ticket_type": "unknown"},
     )
     assert ticket_id not in {t["id"] for t in open_unknown.json()}
 
-    kb = client.get("/kb", params={"department": "it"})
+    kb = client.get("/kb", headers=admin_headers, params={"department": "it"})
     titles = [d["title"] for d in kb.json()["departments"][0]["documents"]]
     assert "Electric Scooter Parking" in titles
 
 
-def test_resolve_escalation_ticket(client):
+def test_resolve_escalation_ticket(client, admin_headers):
     q = client.post(
         "/query",
+        headers=admin_headers,
         json={"question": "I need to report workplace harassment immediately"},
     )
     assert q.status_code == 200
@@ -186,25 +206,32 @@ def test_resolve_escalation_ticket(client):
 
     resolved = client.patch(
         f"/tickets/{ticket_id}/resolve",
+        headers=admin_headers,
         json={"status": "resolved", "admin_notes": "HR case opened"},
     )
     assert resolved.status_code == 200
     assert resolved.json()["status"] == "resolved"
 
     open_esc = client.get(
-        "/tickets", params={"status": "open", "ticket_type": "escalation"}
+        "/tickets",
+        headers=admin_headers,
+        params={"status": "open", "ticket_type": "escalation"},
     )
     assert ticket_id not in {t["id"] for t in open_esc.json()}
 
 
-def test_stats_and_reset_session(client):
-    client.post("/query", json={"question": "How many PTO days do I get per year?"})
-    stats = client.get("/stats")
+def test_stats_and_reset_session(client, admin_headers):
+    client.post(
+        "/query",
+        headers=admin_headers,
+        json={"question": "How many PTO days do I get per year?"},
+    )
+    stats = client.get("/stats", headers=admin_headers)
     assert stats.status_code == 200
     assert stats.json()["total_queries"] >= 1
     assert stats.json()["recent"]
 
-    reset = client.post("/stats/reset")
+    reset = client.post("/stats/reset", headers=admin_headers)
     assert reset.status_code == 200
     assert reset.json()["status"] == "ok"
     assert reset.json()["stats"]["total_queries"] == 0

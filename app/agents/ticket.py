@@ -31,6 +31,8 @@ def create_ticket_node(state: Dict[str, Any]) -> Dict[str, Any]:
             department="unknown",
             severity=state.get("severity") or "routine",
             attempted_depts=list(state.get("attempted_depts") or []),
+            created_by_user_id=state.get("user_id"),
+            created_by_email=state.get("user_email"),
         )
         logger.info("create_ticket_node ticket_id=%s reason=%s", ticket["id"], reason)
         return {

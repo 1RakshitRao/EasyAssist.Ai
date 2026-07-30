@@ -25,3 +25,5 @@ class HelpdeskState(TypedDict, total=False):
     cached: bool
     context_used: bool
     node_timings: Dict[str, float]
+    user_id: Optional[str]
+    user_email: Optional[str]
