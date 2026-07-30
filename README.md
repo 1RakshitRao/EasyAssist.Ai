@@ -1,4 +1,4 @@
-# Ampcus Helpdesk RAG Chatbot
+#  Helpdesk RAG Chatbot
 
 Internal AI helpdesk that answers **HR**, **IT**, **Compliance**, and **Legal** questions from grounded knowledge bases. It never invents policy when the KB has no answer.
 
