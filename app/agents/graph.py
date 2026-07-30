@@ -103,6 +103,9 @@ def run_pipeline(
     query: str,
     normalized_query: str,
     department_hint: str | None = None,
+    *,
+    user_id: str | None = None,
+    user_email: str | None = None,
 ) -> Dict[str, Any]:
     initial: HelpdeskState = {
         "query": query,
@@ -119,6 +122,8 @@ def run_pipeline(
         "context_used": False,
         "token_usage": {},
         "node_timings": {},
+        "user_id": user_id,
+        "user_email": user_email,
     }
     graph = get_graph()
     return graph.invoke(initial)

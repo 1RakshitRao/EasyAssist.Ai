@@ -90,8 +90,40 @@ class TicketResponse(BaseModel):
     assigned_department: Optional[str] = None
     kb_doc_id: Optional[str] = None
     admin_notes: Optional[str] = None
+    created_by_user_id: Optional[str] = None
+    created_by_email: Optional[str] = None
+    updated_by_user_id: Optional[str] = None
+    updated_by_email: Optional[str] = None
 
 
 class TicketResolveRequest(BaseModel):
     admin_notes: Optional[str] = None
     status: str = Field(default="resolved", description="resolved | assigned")
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., min_length=3)
+    password: str = Field(..., min_length=1)
+
+
+class UserPublic(BaseModel):
+    id: str
+    email: str
+    name: str = ""
+    role: str
+    active: bool = True
+    created_at: str = ""
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    user: UserPublic
+
+
+class CreateUserRequest(BaseModel):
+    email: str
+    password: str = Field(..., min_length=8)
+    role: str = Field(..., description="employee | agent | admin")
+    name: str = ""

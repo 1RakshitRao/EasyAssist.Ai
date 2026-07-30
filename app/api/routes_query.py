@@ -10,6 +10,7 @@ from app.agents.graph import run_pipeline
 from app.agents.normalize import normalize_query
 from app.agents.timing import timed
 from app.analytics.stats import record_query
+from app.auth.deps import CurrentUser
 from app.cache.semantic_cache import get_semantic_cache
 from app.config import get_settings
 from app.models.schemas import QueryRequest, QueryResponse
@@ -20,7 +21,7 @@ router = APIRouter(tags=["query"])
 
 
 @router.post("/query", response_model=QueryResponse)
-def query(req: QueryRequest) -> QueryResponse:
+def query(req: QueryRequest, user: CurrentUser) -> QueryResponse:
     settings = get_settings()
     timings: dict[str, float] = {}
     with timed(timings, "normalize"):
@@ -31,7 +32,6 @@ def query(req: QueryRequest) -> QueryResponse:
     if settings.semantic_cache_enabled:
         sem = get_semantic_cache()
         with timed(timings, "semantic_cache_lookup"):
-            # Embed the raw-ish normalized text for paraphrase matching
             cached_payload, similarity = sem.lookup(
                 normalized,
                 department_hint=req.department_hint,
@@ -45,7 +45,6 @@ def query(req: QueryRequest) -> QueryResponse:
         node_timings = dict(cached.get("node_timings") or {})
         node_timings.update(timings)
         cached["node_timings"] = node_timings
-        # Drop fields that might break schema if older entries lack them
         response = QueryResponse(**{k: v for k, v in cached.items() if k in QueryResponse.model_fields})
         payload = response.model_dump()
         payload["_question"] = req.question
@@ -56,6 +55,8 @@ def query(req: QueryRequest) -> QueryResponse:
         query=req.question,
         normalized_query=normalized,
         department_hint=req.department_hint,
+        user_id=user.get("id"),
+        user_email=user.get("email"),
     )
     node_timings = dict(result.get("node_timings") or {})
     node_timings.update(timings)

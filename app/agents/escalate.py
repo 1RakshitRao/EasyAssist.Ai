@@ -41,6 +41,8 @@ def escalate_node(state: Dict[str, Any]) -> Dict[str, Any]:
             department=department,
             severity=severity,
             attempted_depts=list(state.get("attempted_depts") or []),
+            created_by_user_id=state.get("user_id"),
+            created_by_email=state.get("user_email"),
         )
         user_reason = (
             f"{reason} You should hear back within 2 hours. "

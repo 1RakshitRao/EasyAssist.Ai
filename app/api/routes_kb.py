@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
+from app.auth.deps import CurrentUser
 from app.rag.chroma_store import DEPARTMENTS, get_store
 
 router = APIRouter(tags=["knowledge-base"])
@@ -13,6 +14,7 @@ router = APIRouter(tags=["knowledge-base"])
 
 @router.get("/kb")
 def list_knowledge_base(
+    _user: CurrentUser,
     department: Optional[str] = Query(default=None),
 ) -> Dict[str, Any]:
     """Return official documents/protocols stored in the RAG knowledge bases."""

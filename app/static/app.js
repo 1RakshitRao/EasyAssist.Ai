@@ -1,7 +1,133 @@
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 
+const AUTH_KEY = "ampcus_helpdesk_auth";
+
+function formatApiError(err, fallback) {
+  const detail = err?.detail;
+  if (!detail) return fallback;
+  if (typeof detail === "string") return detail;
+  if (detail.message) {
+    const extra = detail.duplicate_title
+      ? ` (matches “${detail.duplicate_title}”)`
+      : detail.duplicate_of
+        ? ` (matches ${detail.duplicate_of})`
+        : "";
+    return `${detail.message}${extra}`;
+  }
+  try {
+    return JSON.stringify(detail);
+  } catch {
+    return fallback;
+  }
+}
+
+function getAuth() {
+  try {
+    return JSON.parse(localStorage.getItem(AUTH_KEY) || "null");
+  } catch {
+    return null;
+  }
+}
+
+function setAuth(payload) {
+  localStorage.setItem(AUTH_KEY, JSON.stringify(payload));
+}
+
+function clearAuth() {
+  localStorage.removeItem(AUTH_KEY);
+}
+
+function currentRole() {
+  return getAuth()?.user?.role || "";
+}
+
+function currentName() {
+  return getAuth()?.user?.name || getAuth()?.user?.email || "there";
+}
+
+function logout(message) {
+  clearAuth();
+  clearChatUi?.();
+  showLogin(message);
+}
+
+function showLogin(message) {
+  $("#app-shell").hidden = true;
+  $("#login-screen").hidden = false;
+  document.body.classList.add("is-login");
+  const err = $("#login-error");
+  if (message) {
+    err.hidden = false;
+    err.textContent = message;
+  } else {
+    err.hidden = true;
+    err.textContent = "";
+  }
+}
+
+function applyRoleGates() {
+  const role = currentRole();
+  $$(".nav-btn[data-roles]").forEach((btn) => {
+    const allowed = (btn.dataset.roles || "").split(",").map((r) => r.trim());
+    btn.hidden = !allowed.includes(role);
+  });
+  $$("[data-admin-only]").forEach((el) => {
+    el.hidden = role !== "admin";
+  });
+  const pill = $("#user-pill");
+  if (pill) {
+    const user = getAuth()?.user;
+    pill.textContent = user?.role || "";
+    pill.title = user ? `${user.name || ""} <${user.email}>` : "";
+  }
+  const roleEl = $("#chat-user-role");
+  if (roleEl) {
+    roleEl.textContent = role || "user";
+  }
+}
+
+async function enterApp() {
+  $("#login-screen").hidden = true;
+  $("#app-shell").hidden = false;
+  document.body.classList.remove("is-login");
+  applyRoleGates();
+  switchView("chat");
+}
+
+async function api(path, options = {}) {
+  const auth = getAuth();
+  const headers = {
+    ...(options.headers || {}),
+  };
+  if (!(options.body instanceof FormData) && options.body && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
+  if (auth?.access_token) {
+    headers.Authorization = `Bearer ${auth.access_token}`;
+  }
+  const res = await fetch(path, { ...options, headers });
+  if (res.status === 401) {
+    logout("Session expired — please sign in again.");
+    throw new Error("Unauthorized");
+  }
+  if (res.status === 403) {
+    const err = await res.json().catch(() => ({}));
+    const msg = formatApiError(err, "You do not have permission for that action.");
+    throw new Error(msg);
+  }
+  return res;
+}
+
 function switchView(name) {
+  const role = currentRole();
+  const btn = $(`.nav-btn[data-view="${name}"]`);
+  if (btn?.hidden) {
+    name = "chat";
+  }
+  if ((name === "dashboard" || name === "insights") && !["agent", "admin"].includes(role)) {
+    name = "chat";
+  }
   $$(".view").forEach((v) => v.classList.remove("active"));
   $$(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
   const view = document.getElementById(`view-${name}`);
@@ -20,6 +146,42 @@ $$(".nav-btn, [data-view].btn-primary").forEach((el) => {
   el.addEventListener("click", () => {
     if (el.dataset.view) switchView(el.dataset.view);
   });
+});
+
+$("#logout-btn")?.addEventListener("click", () => logout());
+
+$("#login-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const email = $("#login-email").value.trim();
+  const password = $("#login-password").value;
+  const err = $("#login-error");
+  const btn = $("#login-submit");
+  err.hidden = true;
+  btn.disabled = true;
+  btn.textContent = "Signing in…";
+  try {
+    const res = await fetch("/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(formatApiError(data, "Invalid email or password"));
+    }
+    setAuth({
+      access_token: data.access_token,
+      user: data.user,
+    });
+    $("#login-password").value = "";
+    await enterApp();
+  } catch (ex) {
+    err.hidden = false;
+    err.textContent = ex.message || "Sign in failed";
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Sign in";
+  }
 });
 
 function barList(container, data, colors) {
@@ -53,7 +215,7 @@ const DEPT_COLORS = {
 
 async function loadStats() {
   const [stats, health] = await Promise.all([
-    fetch("/stats").then((r) => r.json()),
+    api("/stats").then((r) => r.json()),
     fetch("/health").then((r) => r.json()),
   ]);
 
@@ -146,7 +308,7 @@ async function resetSession() {
     "Reset session?\n\nThis clears dashboard KPIs, recent queries, semantic cache, and the chat transcript.\nTickets and knowledge-base documents are kept."
   );
   if (!ok) return;
-  const res = await fetch("/stats/reset", { method: "POST" });
+  const res = await api("/stats/reset", { method: "POST" });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     alert(err.detail || `Reset failed (${res.status})`);
@@ -186,9 +348,8 @@ async function ask(question) {
   const thinking = $("#chat-messages").lastElementChild;
 
   try {
-    const res = await fetch("/query", {
+    const res = await api("/query", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question: q }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -230,25 +391,6 @@ $("#chat-wave")?.addEventListener("click", () => {
 
 function ticketItems(payload) {
   return Array.isArray(payload) ? payload : payload.value || [];
-}
-
-function formatApiError(err, fallback) {
-  const detail = err?.detail;
-  if (!detail) return fallback;
-  if (typeof detail === "string") return detail;
-  if (detail.message) {
-    const extra = detail.duplicate_title
-      ? ` (matches “${detail.duplicate_title}”)`
-      : detail.duplicate_of
-        ? ` (matches ${detail.duplicate_of})`
-        : "";
-    return `${detail.message}${extra}`;
-  }
-  try {
-    return JSON.stringify(detail);
-  } catch {
-    return fallback;
-  }
 }
 
 const PAGE_SIZE = 6;
@@ -308,7 +450,7 @@ let _escalationTickets = [];
 let _escalationPage = 1;
 
 async function loadTickets() {
-  const tickets = await fetch("/tickets?status=open&ticket_type=unknown").then((r) => r.json());
+  const tickets = await api("/tickets?status=open&ticket_type=unknown").then((r) => r.json());
   _unknownTickets = ticketItems(tickets);
   _unknownPage = 1;
   renderUnknownTickets();
@@ -363,9 +505,8 @@ function renderUnknownTickets() {
       btn.disabled = true;
       btn.textContent = "Saving…";
       try {
-        const res = await fetch(`/tickets/${id}/promote`, {
+        const res = await api(`/tickets/${id}/promote`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ department, answer }),
         });
         if (!res.ok) {
@@ -384,7 +525,7 @@ function renderUnknownTickets() {
 }
 
 async function loadEscalations() {
-  const tickets = await fetch("/tickets?status=open&ticket_type=escalation").then((r) =>
+  const tickets = await api("/tickets?status=open&ticket_type=escalation").then((r) =>
     r.json()
   );
   _escalationTickets = ticketItems(tickets);
@@ -436,9 +577,8 @@ function renderEscalations() {
       const notes = card.querySelector(".notes-input").value.trim();
       btn.disabled = true;
       try {
-        const res = await fetch(`/tickets/${id}/resolve`, {
+        const res = await api(`/tickets/${id}/resolve`, {
           method: "PATCH",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: "resolved", admin_notes: notes || null }),
         });
         if (!res.ok) {
@@ -466,9 +606,8 @@ function renderEscalations() {
       }
       btn.disabled = true;
       try {
-        const res = await fetch(`/tickets/${id}/promote`, {
+        const res = await api(`/tickets/${id}/promote`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ answer, admin_notes: notes || null }),
         });
         if (!res.ok) {
@@ -618,7 +757,7 @@ function drawLatencyChart(canvas, series) {
 }
 
 async function loadInsights() {
-  const stats = await fetch("/stats").then((r) => r.json());
+  const stats = await api("/stats").then((r) => r.json());
   $("#ins-cost-actual").textContent = money(stats.cost_actual_sum_usd);
   $("#ins-cost-actual-sub").textContent = `${stats.total_queries} queries`;
   $("#ins-cost-opus").textContent = money(stats.cost_opus_sum_usd);
@@ -693,7 +832,7 @@ let _kbDept = "hr";
 let _kbPage = 1;
 
 async function loadKnowledgeBase() {
-  const data = await fetch("/kb").then((r) => r.json());
+  const data = await api("/kb").then((r) => r.json());
   _kbData = data;
   const depts = (data.departments || []).map((d) => d.department);
   if (!depts.includes(_kbDept) && depts.length) {
@@ -768,4 +907,20 @@ function renderKbPanel() {
 }
 
 $(".brand")?.addEventListener("click", () => switchView("chat"));
-requestAnimationFrame(() => $("#chat-input")?.focus());
+
+(async function boot() {
+  const auth = getAuth();
+  if (!auth?.access_token) {
+    showLogin();
+    return;
+  }
+  try {
+    const res = await api("/auth/me");
+    if (!res.ok) throw new Error("bad session");
+    const user = await res.json();
+    setAuth({ access_token: auth.access_token, user });
+    await enterApp();
+  } catch {
+    logout();
+  }
+})();

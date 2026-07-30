@@ -5,6 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from app.analytics.stats import reset_stats, snapshot
+from app.auth.deps import AdminUser, AgentUser
 from app.cache.semantic_cache import get_semantic_cache
 from app.rag.chroma_store import get_store
 from app.tickets.store import TICKET_TYPE_ESCALATION, TICKET_TYPE_UNKNOWN, count_open
@@ -22,12 +23,12 @@ def _stats_payload():
 
 
 @router.get("/stats")
-def get_stats():
+def get_stats(_user: AgentUser):
     return _stats_payload()
 
 
 @router.post("/stats/reset")
-def reset_session_stats(clear_semantic_cache: bool = True):
+def reset_session_stats(_admin: AdminUser, clear_semantic_cache: bool = True):
     """
     Clear in-memory dashboard KPIs / recent queries.
     Optionally also clears the semantic FAQ cache (persisted in Chroma).

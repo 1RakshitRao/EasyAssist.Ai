@@ -41,6 +41,10 @@ def _read_all() -> List[Dict[str, Any]]:
     for t in tickets:
         t.setdefault("ticket_type", TICKET_TYPE_UNKNOWN)
         t.setdefault("severity", "routine")
+        t.setdefault("created_by_user_id", None)
+        t.setdefault("created_by_email", None)
+        t.setdefault("updated_by_user_id", None)
+        t.setdefault("updated_by_email", None)
     return tickets
 
 
@@ -58,6 +62,8 @@ def create_ticket(
     department: str = "unknown",
     severity: str = "routine",
     attempted_depts: Optional[List[str]] = None,
+    created_by_user_id: Optional[str] = None,
+    created_by_email: Optional[str] = None,
 ) -> Dict[str, Any]:
     ticket = {
         "id": str(uuid.uuid4()),
@@ -74,6 +80,10 @@ def create_ticket(
         "assigned_department": department if department != "unknown" else None,
         "kb_doc_id": None,
         "admin_notes": None,
+        "created_by_user_id": created_by_user_id,
+        "created_by_email": created_by_email,
+        "updated_by_user_id": None,
+        "updated_by_email": None,
     }
     with _lock:
         tickets = _read_all()

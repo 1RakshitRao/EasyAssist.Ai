@@ -1,4 +1,4 @@
-"""Ingest endpoint — upsert documents into a department KB (unauthenticated in MVP)."""
+"""Ingest endpoint — upsert documents into a department KB (admin only)."""
 
 from __future__ import annotations
 
@@ -6,6 +6,7 @@ import uuid
 
 from fastapi import APIRouter, HTTPException
 
+from app.auth.deps import AdminUser
 from app.models.schemas import IngestRequest, IngestResponse
 from app.rag.chroma_store import DEPARTMENTS, NearDuplicateError, get_store
 
@@ -13,7 +14,7 @@ router = APIRouter(tags=["ingest"])
 
 
 @router.post("/ingest", response_model=IngestResponse)
-def ingest(req: IngestRequest) -> IngestResponse:
+def ingest(req: IngestRequest, _admin: AdminUser) -> IngestResponse:
     dept = req.department.lower().strip()
     if dept not in DEPARTMENTS:
         raise HTTPException(
