@@ -29,6 +29,8 @@ class QueryResponse(BaseModel):
     context_used: bool = False
     token_usage: Dict[str, int] = Field(default_factory=dict)
     node_timings: Dict[str, float] = Field(default_factory=dict)
+    prompt_score: Optional[int] = None
+    prompt_feedback: Optional[Dict[str, Any]] = None
 
 
 class IngestRequest(BaseModel):
@@ -112,6 +114,7 @@ class UserPublic(BaseModel):
     name: str = ""
     role: str
     active: bool = True
+    access_restricted: bool = False
     created_at: str = ""
 
 

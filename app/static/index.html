@@ -49,8 +49,11 @@
         <button class="nav-btn" data-view="escalations" data-roles="agent,admin" title="Escalations" aria-label="Escalations">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         </button>
-        <button class="nav-btn" data-view="insights" data-roles="agent,admin" title="Query insights" aria-label="Query insights">
+        <button class="nav-btn" data-view="insights" data-roles="admin" title="Query insights" aria-label="Query insights">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-6 4 3 5-8"/></svg>
+        </button>
+        <button class="nav-btn" data-view="attribution" data-roles="admin" title="User attribution" aria-label="User attribution">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
         </button>
       </nav>
       <div class="sidebar-footer">
@@ -340,6 +343,67 @@
                   <th>Actual $</th>
                   <th>Opus $</th>
                   <th>Saved</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <!-- USER ATTRIBUTION (admin) -->
+      <section id="view-attribution" class="view">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Cost &amp; quality</p>
+            <h1>User Attribution</h1>
+          </div>
+          <button id="refresh-attribution" class="chip" type="button">Refresh</button>
+        </header>
+        <p class="section-blurb">
+          Durable per-user cost, cache usage, and prompt-quality scores from the audit log.
+          Click a user to inspect recent queries. Status: Good / Training / Restricted.
+        </p>
+
+        <div class="kpi-row" id="attr-kpis"></div>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h3>Users</h3>
+            <p>Cost, cache hit rate, average prompt score, training status</p>
+          </div>
+          <div class="table-wrap">
+            <table class="insights-table" id="attr-users-table">
+              <thead>
+                <tr>
+                  <th>User</th>
+                  <th>Role</th>
+                  <th>Queries</th>
+                  <th>Cost</th>
+                  <th>Cache %</th>
+                  <th>Avg score</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel" id="attr-drilldown" hidden>
+          <div class="panel-head">
+            <h3 id="attr-drill-title">Recent queries</h3>
+            <p>Score, cost, and department for the selected user</p>
+          </div>
+          <div class="table-wrap">
+            <table class="insights-table" id="attr-queries-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>Query</th>
+                  <th>Score</th>
+                  <th>Cost</th>
+                  <th>Dept</th>
                 </tr>
               </thead>
               <tbody></tbody>

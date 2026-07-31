@@ -1,18 +1,26 @@
-"""Auth API — login, me, admin user management."""
+"""Auth API — login, me, admin user management, training complete."""
 
 from __future__ import annotations
 
-from typing import List
+from typing import Annotated, Any, Dict, List, Optional
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, Field
 
-from app.auth.deps import AdminUser, CurrentUser
+from app.audit.enforcement import complete_training, decode_training_token
+from app.auth.deps import AdminUser, CurrentUser, get_current_user
 from app.auth.jwt import ROLES, create_access_token
 from app.auth.users import authenticate, create_user, list_users, public_user
 from app.config import get_settings
 from app.models.schemas import CreateUserRequest, LoginRequest, TokenResponse, UserPublic
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+_optional_bearer = HTTPBearer(auto_error=False)
+
+
+class TrainingCompleteRequest(BaseModel):
+    token: Optional[str] = Field(None, description="Signed training link token")
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -41,6 +49,33 @@ def login(req: LoginRequest) -> TokenResponse:
 @router.get("/me", response_model=UserPublic)
 def me(user: CurrentUser) -> UserPublic:
     return UserPublic(**user)
+
+
+@router.post("/training/complete")
+def training_complete(
+    req: TrainingCompleteRequest,
+    creds: Annotated[HTTPAuthorizationCredentials | None, Depends(_optional_bearer)] = None,
+) -> Dict[str, Any]:
+    """Self-service training completion via signed token or authenticated session."""
+    email: Optional[str] = None
+    if req.token:
+        try:
+            email = decode_training_token(req.token)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    elif creds and creds.credentials:
+        try:
+            user = get_current_user(creds)
+            email = str(user.get("email") or "").lower()
+        except HTTPException:
+            raise
+    if not email:
+        raise HTTPException(
+            status_code=400,
+            detail="Provide a training token or authenticate to complete training",
+        )
+    row = complete_training(email)
+    return {"status": "ok", "user_email": email, "training": row}
 
 
 @router.get("/users", response_model=List[UserPublic])
