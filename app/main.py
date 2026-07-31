@@ -18,6 +18,8 @@ from app.api.routes_query import router as query_router
 from app.api.routes_stats import router as stats_router
 from app.api.routes_tickets import router as tickets_router
 from app.analytics.stats import reset_stats
+from app.api.routes_admin_insights import router as admin_insights_router
+from app.audit.db import init_audit_db
 from app.auth.users import bootstrap_admin_if_empty
 from app.cache.redis_cache import get_cache
 from app.rag.chroma_store import get_store
@@ -40,6 +42,7 @@ async def lifespan(_app: FastAPI):
     store.seed_if_empty()
     logger.info("Collection counts: %s", store.collection_counts())
     bootstrap_admin_if_empty()
+    init_audit_db()
     yield
     logger.info("Shutting down Ampcus Helpdesk")
 
@@ -58,6 +61,7 @@ app.include_router(ingest_router)
 app.include_router(kb_router)
 app.include_router(tickets_router)
 app.include_router(stats_router)
+app.include_router(admin_insights_router)
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 

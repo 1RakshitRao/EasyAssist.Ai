@@ -125,7 +125,10 @@ function switchView(name) {
   if (btn?.hidden) {
     name = "chat";
   }
-  if ((name === "dashboard" || name === "insights") && !["agent", "admin"].includes(role)) {
+  if (name === "dashboard" && !["agent", "admin"].includes(role)) {
+    name = "chat";
+  }
+  if ((name === "insights" || name === "attribution") && role !== "admin") {
     name = "chat";
   }
   $$(".view").forEach((v) => v.classList.remove("active"));
@@ -137,6 +140,7 @@ function switchView(name) {
   if (name === "tickets") loadTickets();
   if (name === "escalations") loadEscalations();
   if (name === "insights") loadInsights();
+  if (name === "attribution") loadUserAttribution();
   if (name === "chat") {
     requestAnimationFrame(() => $("#chat-input")?.focus());
   }
@@ -318,6 +322,9 @@ async function resetSession() {
   await loadStats();
   if ($("#view-insights")?.classList.contains("active")) {
     await loadInsights();
+  }
+  if ($("#view-attribution")?.classList.contains("active")) {
+    await loadUserAttribution();
   }
 }
 
@@ -630,6 +637,7 @@ $("#refresh-kb")?.addEventListener("click", () => loadKnowledgeBase());
 $("#refresh-tickets")?.addEventListener("click", loadTickets);
 $("#refresh-escalations")?.addEventListener("click", loadEscalations);
 $("#refresh-insights")?.addEventListener("click", loadInsights);
+$("#refresh-attribution")?.addEventListener("click", loadUserAttribution);
 
 function money(n) {
   const v = Number(n) || 0;
@@ -756,6 +764,91 @@ function drawLatencyChart(canvas, series) {
   ctx.fillText(`${Math.round(maxVal)}ms`, 8, pad.t + 10);
 }
 
+function statusBadge(status) {
+  const s = (status || "good").toLowerCase();
+  const label = s === "restricted" ? "Restricted" : s === "training" ? "Training" : "Good";
+  const cls =
+    s === "restricted" ? "unknown" : s === "training" ? "cached" : "";
+  return `<span class="tag ${cls}">${label}</span>`;
+}
+
+async function loadUserAttribution() {
+  if (currentRole() !== "admin") return;
+  const data = await api("/admin/insights").then((r) => r.json());
+  const kpis = $("#attr-kpis");
+  if (kpis) {
+    const biggest = data.biggest_spender;
+    kpis.innerHTML = `
+      <article class="kpi-card"><p class="kpi-label">Total cost (audit)</p><h2>${money(
+        data.total_cost_usd
+      )}</h2><p class="kpi-sub">${data.total_queries || 0} queries</p></article>
+      <article class="kpi-card"><p class="kpi-label">Cache savings</p><h2>${money(
+        data.cache_savings_usd
+      )}</h2><p class="kpi-sub">${data.cache_hit_rate || 0}% hit rate</p></article>
+      <article class="kpi-card"><p class="kpi-label">Biggest spender</p><h2 style="font-size:1rem">${
+        biggest ? escapeHtml(biggest.user_email) : "—"
+      }</h2><p class="kpi-sub">${biggest ? money(biggest.total_cost_usd) : ""}</p></article>
+      <article class="kpi-card"><p class="kpi-label">Top dept cost</p><h2 style="font-size:1rem">${
+        data.most_expensive_dept
+          ? escapeHtml(data.most_expensive_dept.department)
+          : "—"
+      }</h2><p class="kpi-sub">${
+      data.most_expensive_dept ? money(data.most_expensive_dept.cost_usd) : ""
+    }</p></article>`;
+  }
+  const tbody = $("#attr-users-table tbody");
+  const users = data.users || [];
+  if (!users.length) {
+    tbody.innerHTML = `<tr><td colspan="7">No audited queries yet.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = users
+    .map(
+      (u) => `<tr class="attr-user-row" data-email="${escapeHtml(u.user_email)}" style="cursor:pointer">
+        <td>${escapeHtml(u.user_email)}</td>
+        <td>${escapeHtml(u.user_role || "—")}</td>
+        <td class="mono">${u.queries}</td>
+        <td class="mono">${money(u.total_cost_usd)}</td>
+        <td class="mono">${u.cache_hit_rate}%</td>
+        <td class="mono">${u.avg_prompt_score}</td>
+        <td>${statusBadge(u.status)}</td>
+      </tr>`
+    )
+    .join("");
+  tbody.querySelectorAll(".attr-user-row").forEach((row) => {
+    row.addEventListener("click", () => loadUserQueries(row.dataset.email));
+  });
+}
+
+async function loadUserQueries(email) {
+  const wrap = $("#attr-drilldown");
+  const title = $("#attr-drill-title");
+  const tbody = $("#attr-queries-table tbody");
+  if (!wrap || !tbody) return;
+  wrap.hidden = false;
+  title.textContent = `Recent queries — ${email}`;
+  const data = await api(`/admin/users/${encodeURIComponent(email)}/queries?limit=50`).then((r) =>
+    r.json()
+  );
+  const rows = data.queries || [];
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="5">No queries.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = rows
+    .map((r) => {
+      const ts = (r.timestamp || "").replace("T", " ").slice(0, 19);
+      return `<tr>
+        <td class="mono">${escapeHtml(ts)}</td>
+        <td class="q">${escapeHtml(r.query || "")}</td>
+        <td class="mono">${r.prompt_score ?? "—"}</td>
+        <td class="mono">${money(r.cost_usd)}</td>
+        <td>${escapeHtml(r.department || "—")}</td>
+      </tr>`;
+    })
+    .join("");
+}
+
 async function loadInsights() {
   const stats = await api("/stats").then((r) => r.json());
   $("#ins-cost-actual").textContent = money(stats.cost_actual_sum_usd);
@@ -795,23 +888,22 @@ async function loadInsights() {
   const rows = stats.recent || [];
   if (!rows.length) {
     tbody.innerHTML = `<tr><td colspan="9">No queries yet.</td></tr>`;
-    return;
-  }
-  tbody.innerHTML = rows
-    .map((r) => {
-      const lat =
-        r.latency_ms >= 1000
-          ? `${(r.latency_ms / 1000).toFixed(1)}s`
-          : `${Math.round(r.latency_ms)}ms`;
-      const reason = r.classify_reason
-        ? `<div style="color:#888;font-weight:500;margin-top:4px">${escapeHtml(
-            r.classify_reason
-          )}</div>`
-        : "";
-      return `<tr>
+  } else {
+    tbody.innerHTML = rows
+      .map((r) => {
+        const lat =
+          r.latency_ms >= 1000
+            ? `${(r.latency_ms / 1000).toFixed(1)}s`
+            : `${Math.round(r.latency_ms)}ms`;
+        const reason = r.classify_reason
+          ? `<div style="color:#888;font-weight:500;margin-top:4px">${escapeHtml(
+              r.classify_reason
+            )}</div>`
+          : "";
+        return `<tr>
         <td class="q">${escapeHtml(r.question || "")}${reason}${
-        r.cached ? ' <span class="tag cached">cached</span>' : ""
-      }</td>
+          r.cached ? ' <span class="tag cached">cached</span>' : ""
+        }</td>
         <td><span class="tag ${r.department === "unknown" ? "unknown" : ""}">${escapeHtml(
           r.department
         )}</span></td>
@@ -823,8 +915,9 @@ async function loadInsights() {
         <td class="mono">${money(r.cost_opus_always_usd)}</td>
         <td class="mono">${money(r.cost_savings_usd)}</td>
       </tr>`;
-    })
-    .join("");
+      })
+      .join("");
+  }
 }
 
 let _kbData = null;

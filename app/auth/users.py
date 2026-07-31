@@ -45,6 +45,7 @@ def _read_all() -> List[Dict[str, Any]]:
         u.setdefault("active", True)
         u.setdefault("name", "")
         u.setdefault("role", "employee")
+        u.setdefault("access_restricted", False)
     return users
 
 
@@ -104,6 +105,7 @@ def create_user(
             "password_hash": hash_password(password),
             "created_at": datetime.now(timezone.utc).isoformat(),
             "active": bool(active),
+            "access_restricted": False,
         }
         users.append(user)
         _write_all(users)
@@ -129,8 +131,22 @@ def public_user(user: Dict[str, Any]) -> Dict[str, Any]:
         "name": user.get("name") or "",
         "role": user.get("role"),
         "active": bool(user.get("active", True)),
+        "access_restricted": bool(user.get("access_restricted", False)),
         "created_at": user.get("created_at") or "",
     }
+
+
+def set_access_restricted(email: str, restricted: bool) -> Optional[Dict[str, Any]]:
+    """Mirror training restriction onto the JSON user record for fast /query checks."""
+    key = (email or "").strip().lower()
+    with _lock:
+        users = _read_all()
+        for user in users:
+            if str(user.get("email") or "").lower() == key:
+                user["access_restricted"] = bool(restricted)
+                _write_all(users)
+                return dict(user)
+    return None
 
 
 def bootstrap_admin_if_empty() -> Optional[Dict[str, Any]]:

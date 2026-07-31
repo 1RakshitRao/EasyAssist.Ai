@@ -34,9 +34,15 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("INGEST_DEDUP_MAX_DISTANCE", "0.45")
     monkeypatch.setenv("RETRIEVAL_MAX_DISTANCE", "1.15")
     monkeypatch.setenv("REDIS_URL", "")
-    monkeypatch.setenv("JWT_SECRET", "test-secret-ampcus-helpdesk")
     monkeypatch.setenv("ADMIN_EMAIL", "admin@ampcus.com")
     monkeypatch.setenv("ADMIN_PASSWORD", "ChangeMeAdmin1!")
+    monkeypatch.setenv("AUDIT_DB_PATH", str(tmp_path / "audit.db"))
+    monkeypatch.setenv("USERS_PATH", str(tmp_path / "users.json"))
+    monkeypatch.setenv("PROMPT_SCORE_WINDOW", "10")
+    monkeypatch.setenv("PROMPT_SCORE_RESTRICT_AVG", "4.0")
+    monkeypatch.setenv("PROMPT_TRAINING_GRACE_DAYS", "7")
+    monkeypatch.setenv("SMTP_HOST", "")
+    monkeypatch.setenv("JWT_SECRET", "test-secret-ampcus-helpdesk")
 
     from app.config import get_settings
 

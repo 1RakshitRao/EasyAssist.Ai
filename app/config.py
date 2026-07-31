@@ -52,6 +52,18 @@ class Settings(BaseSettings):
     admin_password: str = "ChangeMeAdmin1!"
     users_path: str = ""
 
+    # Audit / cost attribution / prompt scoring (SQLite)
+    audit_db_path: str = ""
+    prompt_score_window: int = 10
+    prompt_score_restrict_avg: float = 4.0
+    prompt_training_grace_days: int = 7
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "helpdesk@ampcus.com"
+    training_base_url: str = "http://127.0.0.1:8080"
+
     # Anthropic-equivalent list prices (USD / million tokens) for cost dashboard
     price_haiku_input_per_mtok: float = 1.0
     price_haiku_output_per_mtok: float = 5.0
