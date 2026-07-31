@@ -10,6 +10,10 @@ from pydantic import BaseModel, Field
 class QueryRequest(BaseModel):
     question: str = Field(..., min_length=1)
     department_hint: Optional[str] = None
+    model_preference: Optional[str] = Field(
+        default="auto",
+        description="auto | routine | high | opus — answer-model tier override",
+    )
 
 
 class QueryResponse(BaseModel):

@@ -95,10 +95,11 @@ def test_answer_no_context_refuses():
     assert result["model_used"] == "none"
 
 
-def test_should_escalate_high_legal_hr_only():
+def test_should_escalate_any_high_severity():
     assert should_escalate("legal", "high") is True
     assert should_escalate("hr", "high") is True
-    assert should_escalate("it", "high") is False
+    assert should_escalate("it", "high") is True
+    assert should_escalate("compliance", "high") is True
     assert should_escalate("legal", "routine") is False
 
 
@@ -140,6 +141,17 @@ def test_route_after_retrieve_escalate_vs_answer():
             }
         )
         == "answer"
+    )
+    assert (
+        route_after_retrieve(
+            {
+                "chunks": chunks,
+                "retry_count": 0,
+                "department": "it",
+                "severity": "high",
+            }
+        )
+        == "escalate"
     )
 
 

@@ -42,9 +42,12 @@ def generate_answer(
     severity: str = "routine",
     escalated: bool = False,
     escalation_reason: str | None = None,
+    model_preference: str | None = None,
 ) -> Dict[str, Any]:
     settings = get_settings()
-    model = resolve_answer_model(severity, escalated=escalated)
+    model = resolve_answer_model(
+        severity, escalated=escalated, preference=model_preference
+    )
 
     if not chunks:
         return {
@@ -107,6 +110,7 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
             severity=state.get("severity") or "routine",
             escalated=bool(state.get("escalated")),
             escalation_reason=state.get("escalation_reason"),
+            model_preference=state.get("model_preference"),
         )
         usage = merge_token_usage(state.get("token_usage"), result.get("token_usage") or {})
         logger.info(

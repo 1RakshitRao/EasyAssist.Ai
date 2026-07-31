@@ -43,6 +43,9 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("PROMPT_TRAINING_GRACE_DAYS", "7")
     monkeypatch.setenv("SMTP_HOST", "")
     monkeypatch.setenv("JWT_SECRET", "test-secret-ampcus-helpdesk")
+    monkeypatch.setenv("ESCALATION_REMINDER_HOURS", "2")
+    monkeypatch.setenv("ESCALATION_REMINDER_POLL_SECONDS", "3600")
+    monkeypatch.setenv("APP_BASE_URL", "http://127.0.0.1:8080")
 
     from app.config import get_settings
 
