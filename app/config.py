@@ -63,6 +63,10 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = "helpdesk@ampcus.com"
     training_base_url: str = "http://127.0.0.1:8080"
+    app_base_url: str = "http://127.0.0.1:8080"
+    ops_sla_hours: float = 24.0
+    escalation_reminder_hours: float = 2.0
+    escalation_reminder_poll_seconds: float = 60.0
 
     # Anthropic-equivalent list prices (USD / million tokens) for cost dashboard
     price_haiku_input_per_mtok: float = 1.0

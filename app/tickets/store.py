@@ -6,7 +6,7 @@ import json
 import logging
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -19,6 +19,13 @@ _lock = threading.Lock()
 TICKET_TYPE_UNKNOWN = "unknown"
 TICKET_TYPE_ESCALATION = "escalation"
 
+_NOTIFY_DEFAULTS = {
+    "admin_notified_at": None,
+    "employee_notified_at": None,
+    "reminder_sent_at": None,
+    "employee_resolved_notified_at": None,
+}
+
 
 def _tickets_path() -> Path:
     settings = get_settings()
@@ -26,6 +33,19 @@ def _tickets_path() -> Path:
     path = base / "tickets.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def _backfill(ticket: Dict[str, Any]) -> Dict[str, Any]:
+    ticket.setdefault("ticket_type", TICKET_TYPE_UNKNOWN)
+    ticket.setdefault("severity", "routine")
+    ticket.setdefault("created_by_user_id", None)
+    ticket.setdefault("created_by_email", None)
+    ticket.setdefault("updated_by_user_id", None)
+    ticket.setdefault("updated_by_email", None)
+    ticket.setdefault("resolved_at", None)
+    for key, default in _NOTIFY_DEFAULTS.items():
+        ticket.setdefault(key, default)
+    return ticket
 
 
 def _read_all() -> List[Dict[str, Any]]:
@@ -37,20 +57,21 @@ def _read_all() -> List[Dict[str, Any]]:
     except json.JSONDecodeError:
         logger.warning("Corrupt tickets file — starting empty")
         return []
-    # Backfill older tickets
-    for t in tickets:
-        t.setdefault("ticket_type", TICKET_TYPE_UNKNOWN)
-        t.setdefault("severity", "routine")
-        t.setdefault("created_by_user_id", None)
-        t.setdefault("created_by_email", None)
-        t.setdefault("updated_by_user_id", None)
-        t.setdefault("updated_by_email", None)
-    return tickets
+    return [_backfill(t) for t in tickets]
 
 
 def _write_all(tickets: List[Dict[str, Any]]) -> None:
     path = _tickets_path()
     path.write_text(json.dumps(tickets, indent=2), encoding="utf-8")
+
+
+def _parse_ts(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def create_ticket(
@@ -65,6 +86,7 @@ def create_ticket(
     created_by_user_id: Optional[str] = None,
     created_by_email: Optional[str] = None,
 ) -> Dict[str, Any]:
+    now = datetime.now(timezone.utc).isoformat()
     ticket = {
         "id": str(uuid.uuid4()),
         "question": question,
@@ -75,8 +97,8 @@ def create_ticket(
         "status": "open",
         "reason": reason,
         "attempted_depts": list(attempted_depts or []),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now,
+        "updated_at": now,
         "assigned_department": department if department != "unknown" else None,
         "kb_doc_id": None,
         "admin_notes": None,
@@ -84,6 +106,8 @@ def create_ticket(
         "created_by_email": created_by_email,
         "updated_by_user_id": None,
         "updated_by_email": None,
+        "resolved_at": None,
+        **{k: None for k in _NOTIFY_DEFAULTS},
     }
     with _lock:
         tickets = _read_all()
@@ -96,6 +120,16 @@ def create_ticket(
         department,
         reason,
     )
+    try:
+        from app.tickets.inbox import push_ticket_notification
+
+        push_ticket_notification(ticket)
+    except Exception as exc:
+        logger.warning(
+            "in-app ticket notification failed ticket_id=%s: %s",
+            ticket["id"],
+            exc,
+        )
     return ticket
 
 
@@ -110,6 +144,40 @@ def list_tickets(
     if ticket_type:
         tickets = [t for t in tickets if t.get("ticket_type", TICKET_TYPE_UNKNOWN) == ticket_type]
     return tickets
+
+
+def list_due_escalation_reminders(
+    *,
+    now: Optional[datetime] = None,
+    hours: Optional[float] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Escalation tickets still not resolved, older than `hours`, with no reminder yet.
+    Assigned counts as not worked on for reminder purposes.
+    """
+    settings = get_settings()
+    clock = now or datetime.now(timezone.utc)
+    if clock.tzinfo is None:
+        clock = clock.replace(tzinfo=timezone.utc)
+    threshold_hours = float(
+        hours if hours is not None else settings.escalation_reminder_hours
+    )
+    cutoff = clock - timedelta(hours=threshold_hours)
+
+    due: List[Dict[str, Any]] = []
+    for ticket in list_tickets(ticket_type=TICKET_TYPE_ESCALATION):
+        if ticket.get("status") == "resolved":
+            continue
+        if ticket.get("reminder_sent_at"):
+            continue
+        created = _parse_ts(ticket.get("created_at"))
+        if not created:
+            continue
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=timezone.utc)
+        if created <= cutoff:
+            due.append(ticket)
+    return due
 
 
 def count_open(ticket_type: Optional[str] = None) -> int:

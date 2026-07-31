@@ -183,6 +183,7 @@ def query(req: QueryRequest, user: CurrentUser) -> QueryResponse:
             department_hint=req.department_hint,
             user_id=user.get("id"),
             user_email=user.get("email"),
+            model_preference=req.model_preference,
         )
         score = score_fut.result()
         result = pipe_fut.result()

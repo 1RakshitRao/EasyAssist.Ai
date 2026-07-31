@@ -27,3 +27,4 @@ class HelpdeskState(TypedDict, total=False):
     node_timings: Dict[str, float]
     user_id: Optional[str]
     user_email: Optional[str]
+    model_preference: Optional[str]  # auto | routine | high | opus

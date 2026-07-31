@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from app.analytics.ops_health import compute_ops_health
 from app.analytics.stats import reset_stats, snapshot
 from app.auth.deps import AdminUser, AgentUser
 from app.cache.semantic_cache import get_semantic_cache
@@ -25,6 +26,12 @@ def _stats_payload():
 @router.get("/stats")
 def get_stats(_user: AgentUser):
     return _stats_payload()
+
+
+@router.get("/stats/ops")
+def get_ops_health(_user: AgentUser):
+    """Operations Health dashboard — ticket KPIs, trends, and insights."""
+    return compute_ops_health()
 
 
 @router.post("/stats/reset")

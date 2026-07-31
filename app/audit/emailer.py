@@ -18,7 +18,7 @@ def send_email(*, to: str, subject: str, body: str) -> bool:
     host = (settings.smtp_host or "").strip()
     if not host:
         logger.info(
-            "SMTP unset — training email to=%s subject=%s\n%s",
+            "SMTP unset — email to=%s subject=%s\n%s",
             to,
             subject,
             body,
@@ -37,7 +37,7 @@ def send_email(*, to: str, subject: str, body: str) -> bool:
             if settings.smtp_user:
                 smtp.login(settings.smtp_user, settings.smtp_password or "")
             smtp.send_message(msg)
-        logger.info("Sent training email to=%s", to)
+        logger.info("Sent email to=%s subject=%s", to, subject)
         return True
     except Exception as exc:
         logger.warning("SMTP send failed to=%s: %s — logging body instead", to, exc)

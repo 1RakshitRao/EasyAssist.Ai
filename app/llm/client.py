@@ -165,14 +165,28 @@ def complete(
     raise ValueError(f"Unsupported LLM_PROVIDER: {provider}")
 
 
-def resolve_answer_model(severity: str, escalated: bool = False) -> str:
+def resolve_answer_model(
+    severity: str,
+    escalated: bool = False,
+    preference: str | None = None,
+) -> str:
     """
     Role mapping (local sims of Anthropic tiers):
     - routine  → Haiku  (fast/cheap)
     - high     → Sonnet (balanced)
     - high + escalated (legal/HR HITL path) → Opus (strongest)
+
+    Optional preference override: auto|routine|high|opus
     """
     settings = get_settings()
+    pref = (preference or "auto").lower().strip()
+    if pref in {"routine", "haiku", "fast"}:
+        return settings.answer_model_routine
+    if pref in {"high", "sonnet", "balanced"}:
+        return settings.answer_model_high
+    if pref in {"opus", "strong"}:
+        return settings.answer_model_opus
+    # auto
     if escalated and severity == "high":
         return settings.answer_model_opus
     if severity == "high":

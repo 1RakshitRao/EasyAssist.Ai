@@ -14,6 +14,7 @@ from app.models.schemas import (
     TicketResponse,
 )
 from app.rag.chroma_store import DEPARTMENTS, NearDuplicateError, get_store
+from app.tickets.notify import notify_ticket_resolved
 from app.tickets.store import get_ticket, list_tickets, update_ticket
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
@@ -92,14 +93,29 @@ def resolve_ticket(
     status = (req.status or "resolved").lower().strip()
     if status not in {"resolved", "assigned"}:
         raise HTTPException(status_code=400, detail="status must be resolved or assigned")
-    updated = update_ticket(
-        ticket_id,
-        status=status,
-        admin_notes=req.admin_notes or ticket.get("admin_notes"),
-        updated_by_user_id=user.get("id"),
-        updated_by_email=user.get("email"),
-    )
+    fields: dict = {
+        "status": status,
+        "admin_notes": req.admin_notes or ticket.get("admin_notes"),
+        "updated_by_user_id": user.get("id"),
+        "updated_by_email": user.get("email"),
+    }
+    if status == "resolved" and not ticket.get("resolved_at"):
+        from datetime import datetime, timezone
+
+        fields["resolved_at"] = datetime.now(timezone.utc).isoformat()
+    updated = update_ticket(ticket_id, **fields)
     assert updated is not None
+    if status == "resolved":
+        try:
+            updated = (
+                notify_ticket_resolved(
+                    updated,
+                    solution=req.admin_notes or updated.get("admin_notes"),
+                )
+                or updated
+            )
+        except Exception:
+            pass
     return _to_response(updated)
 
 
@@ -165,15 +181,30 @@ def promote_ticket_to_kb(
                 "reason": match.get("reason"),
             },
         ) from exc
+    from datetime import datetime, timezone
+
+    resolved_at = ticket.get("resolved_at") or datetime.now(timezone.utc).isoformat()
     updated = update_ticket(
         ticket_id,
         assigned_department=dept,
         department=dept,
         status="resolved",
+        resolved_at=resolved_at,
         kb_doc_id=ids[0],
         admin_notes=req.admin_notes or ticket.get("admin_notes"),
         updated_by_user_id=user.get("id"),
         updated_by_email=user.get("email"),
     )
     assert updated is not None
+    try:
+        solution = (
+            req.answer
+            or req.content
+            or req.admin_notes
+            or updated.get("admin_notes")
+            or ""
+        )
+        updated = notify_ticket_resolved(updated, solution=solution) or updated
+    except Exception:
+        pass
     return _to_response(updated)

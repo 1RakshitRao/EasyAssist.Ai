@@ -106,6 +106,7 @@ def run_pipeline(
     *,
     user_id: str | None = None,
     user_email: str | None = None,
+    model_preference: str | None = None,
 ) -> Dict[str, Any]:
     initial: HelpdeskState = {
         "query": query,
@@ -124,6 +125,7 @@ def run_pipeline(
         "node_timings": {},
         "user_id": user_id,
         "user_email": user_email,
+        "model_preference": model_preference or "auto",
     }
     graph = get_graph()
     return graph.invoke(initial)
