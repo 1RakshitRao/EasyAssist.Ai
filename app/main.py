@@ -20,6 +20,7 @@ from app.api.routes_ingest import router as ingest_router
 from app.api.routes_kb import router as kb_router
 from app.api.routes_notifications import router as notifications_router
 from app.api.routes_query import router as query_router
+from app.api.routes_sessions import router as sessions_router
 from app.api.routes_stats import router as stats_router
 from app.api.routes_tickets import router as tickets_router
 from app.audit.db import init_audit_db
@@ -85,6 +86,7 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(query_router)
+app.include_router(sessions_router)
 app.include_router(ingest_router)
 app.include_router(kb_router)
 app.include_router(tickets_router)

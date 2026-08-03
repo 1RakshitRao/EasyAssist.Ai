@@ -28,3 +28,5 @@ class HelpdeskState(TypedDict, total=False):
     user_id: Optional[str]
     user_email: Optional[str]
     model_preference: Optional[str]  # auto | routine | high | opus
+    session_id: Optional[str]
+    conversation_history: List[Dict[str, str]]  # prior turns for answer agent

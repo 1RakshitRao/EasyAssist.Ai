@@ -73,11 +73,30 @@ def _system_text(system: Any) -> str:
     return str(system)
 
 
+def _normalize_messages(
+    messages: Optional[List[Dict[str, str]]] = None,
+    user_content: Optional[str] = None,
+) -> List[Dict[str, str]]:
+    if messages is not None:
+        out: List[Dict[str, str]] = []
+        for m in messages:
+            role = str((m or {}).get("role") or "").strip().lower()
+            content = str((m or {}).get("content") or "")
+            if role in {"user", "assistant"} and content:
+                out.append({"role": role, "content": content})
+        if out:
+            return out
+    if user_content is None:
+        raise ValueError("complete() requires messages or user_content")
+    return [{"role": "user", "content": user_content}]
+
+
 def _complete_anthropic(
     *,
     model: str,
     system: Any,
-    user_content: str,
+    user_content: Optional[str] = None,
+    messages: Optional[List[Dict[str, str]]] = None,
     max_tokens: int,
 ) -> LLMResult:
     settings = get_settings()
@@ -86,7 +105,7 @@ def _complete_anthropic(
         model=model,
         max_tokens=max_tokens,
         system=system if not isinstance(system, str) else cached_system(system),
-        messages=[{"role": "user", "content": user_content}],
+        messages=_normalize_messages(messages, user_content),
     )
     text = ""
     for block in response.content:
@@ -104,19 +123,21 @@ def _complete_ollama(
     *,
     model: str,
     system: Any,
-    user_content: str,
+    user_content: Optional[str] = None,
+    messages: Optional[List[Dict[str, str]]] = None,
     max_tokens: int,
 ) -> LLMResult:
     settings = get_settings()
     url = settings.ollama_base_url.rstrip("/") + "/api/chat"
+    chat_messages = [
+        {"role": "system", "content": _system_text(system)},
+        *_normalize_messages(messages, user_content),
+    ]
     payload = {
         "model": model,
         "stream": False,
         "options": {"num_predict": max_tokens},
-        "messages": [
-            {"role": "system", "content": _system_text(system)},
-            {"role": "user", "content": user_content},
-        ],
+        "messages": chat_messages,
     }
     with httpx.Client(timeout=settings.ollama_timeout_seconds) as client:
         resp = client.post(url, json=payload)
@@ -140,10 +161,15 @@ def complete(
     *,
     model: str,
     system: Any,
-    user_content: str,
+    user_content: Optional[str] = None,
+    messages: Optional[List[Dict[str, str]]] = None,
     max_tokens: int = 1024,
 ) -> LLMResult:
-    """Route to Anthropic or Ollama based on LLM_PROVIDER."""
+    """Route to Anthropic or Ollama based on LLM_PROVIDER.
+
+    Pass either ``user_content`` (single turn) or ``messages`` (multi-turn
+    list of {role, content}). When both are set, ``messages`` wins.
+    """
     settings = get_settings()
     provider = (settings.llm_provider or "ollama").lower().strip()
     if provider == "anthropic":
@@ -153,6 +179,7 @@ def complete(
             model=model,
             system=system,
             user_content=user_content,
+            messages=messages,
             max_tokens=max_tokens,
         )
     if provider == "ollama":
@@ -160,6 +187,7 @@ def complete(
             model=model,
             system=system,
             user_content=user_content,
+            messages=messages,
             max_tokens=max_tokens,
         )
     raise ValueError(f"Unsupported LLM_PROVIDER: {provider}")

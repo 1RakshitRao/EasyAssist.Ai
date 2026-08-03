@@ -43,6 +43,7 @@ def generate_answer(
     escalated: bool = False,
     escalation_reason: str | None = None,
     model_preference: str | None = None,
+    conversation_history: List[Dict[str, str]] | None = None,
 ) -> Dict[str, Any]:
     settings = get_settings()
     model = resolve_answer_model(
@@ -78,11 +79,19 @@ def generate_answer(
         f"{esc_line}\n\nProvide a grounded answer."
     )
 
+    history: List[Dict[str, str]] = []
+    for turn in conversation_history or []:
+        role = str((turn or {}).get("role") or "").strip().lower()
+        content = str((turn or {}).get("content") or "")
+        if role in {"user", "assistant"} and content:
+            history.append({"role": role, "content": content})
+    messages = history + [{"role": "user", "content": user_msg}]
+
     try:
         result = complete(
             model=model,
             system=cached_system(ANSWER_SYSTEM),
-            user_content=user_msg,
+            messages=messages,
             max_tokens=1024,
         )
         return {
@@ -111,6 +120,7 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
             escalated=bool(state.get("escalated")),
             escalation_reason=state.get("escalation_reason"),
             model_preference=state.get("model_preference"),
+            conversation_history=list(state.get("conversation_history") or []),
         )
         usage = merge_token_usage(state.get("token_usage"), result.get("token_usage") or {})
         logger.info(
