@@ -49,6 +49,7 @@ function currentName() {
 function logout(message) {
   stopNotificationPolling();
   closeNotifyPanel();
+  closeAccountMenu?.();
   clearAuth();
   clearChatUi?.();
   showLogin(message);
@@ -96,16 +97,17 @@ function applyRoleGates() {
     el.hidden = role !== "admin";
   });
   const user = getAuth()?.user;
-  const pill = $("#user-pill");
-  if (pill) {
-    pill.textContent = user?.role || "";
-    pill.title = user ? `${user.name || ""} <${user.email}>` : "";
-  }
   const avatar = $("#header-avatar");
   if (avatar) {
     avatar.textContent = userInitials(user?.name, user?.email);
     avatar.title = user ? `${user.name || "Account"} · ${user.email || ""}` : "Account";
   }
+  const nameEl = $("#account-menu-name");
+  const emailEl = $("#account-menu-email");
+  const roleElMenu = $("#account-menu-role");
+  if (nameEl) nameEl.textContent = user?.name || "Account";
+  if (emailEl) emailEl.textContent = user?.email || "—";
+  if (roleElMenu) roleElMenu.textContent = user?.role || role || "—";
   const roleEl = $("#chat-user-role");
   if (roleEl) {
     roleEl.textContent = role || "user";
@@ -187,8 +189,8 @@ function initSidebarToggle() {
 
   sidebar?.addEventListener("click", (e) => {
     if (shell?.classList.contains("sidebar-expanded")) return;
-    const btn = e.target.closest(".nav-btn");
-    if (!btn) return;
+    const actionable = e.target.closest(".nav-btn, .sidebar-new-chat, .chat-session-open, .chat-session-more");
+    if (!actionable) return;
     clearPeekTimer();
     setSidebarPeek(false);
   });
@@ -383,6 +385,23 @@ function initNotifications() {
 
 let _headerChromeBound = false;
 
+function closeAccountMenu() {
+  const menu = $("#header-account-menu");
+  const btn = $("#header-avatar");
+  if (menu) menu.hidden = true;
+  if (btn) btn.setAttribute("aria-expanded", "false");
+}
+
+function toggleAccountMenu() {
+  const menu = $("#header-account-menu");
+  const btn = $("#header-avatar");
+  if (!menu || !btn) return;
+  const open = menu.hidden;
+  menu.hidden = !open;
+  btn.setAttribute("aria-expanded", open ? "true" : "false");
+  if (open) closeNotifyPanel();
+}
+
 function initHeaderChrome() {
   if (_headerChromeBound) return;
   _headerChromeBound = true;
@@ -398,6 +417,7 @@ function initHeaderChrome() {
 
   $("#header-notify")?.addEventListener("click", (e) => {
     e.stopPropagation();
+    closeAccountMenu();
     const role = currentRole();
     if (!["agent", "admin"].includes(role)) {
       alert("No notifications right now. Ask a question in Chat if you need help.");
@@ -407,17 +427,30 @@ function initHeaderChrome() {
   });
 
   $("#header-help")?.addEventListener("click", () => {
+    closeAccountMenu();
     alert(
-      "Ampcus Helpdesk tips:\n• Use Chat for HR, IT, Compliance, and Legal questions.\n• Agents/admins work all tickets from the Tickets board (resolve or promote to KB).\n• New tickets appear in the bell and on the Dashboard.\n• Sign out from the sidebar footer."
+      "Ampcus Helpdesk tips:\n• Use Chat for HR, IT, Compliance, and Legal questions.\n• Agents/admins work all tickets from the Tickets board (resolve or promote to KB).\n• New tickets appear in the bell and on the Dashboard.\n• Sign out from the account menu (top-right avatar)."
     );
   });
 
   $("#header-settings")?.addEventListener("click", () => {
+    closeAccountMenu();
     alert("Settings are not available in this demo yet.");
   });
 
-  $("#header-avatar")?.addEventListener("click", () => {
-    if (confirm("Sign out of Ampcus Helpdesk?")) logout();
+  $("#header-avatar")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleAccountMenu();
+  });
+
+  $("#logout-btn")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeAccountMenu();
+    logout();
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest?.("#header-account-wrap")) closeAccountMenu();
   });
 }
 
@@ -431,6 +464,7 @@ async function enterApp() {
   initSidebarToggle();
   initHeaderChrome();
   initNotifications();
+  await loadSessionList();
   switchView("chat");
 }
 
@@ -480,6 +514,7 @@ function switchView(name) {
   if (name === "insights") loadInsights();
   if (name === "attribution") loadUserAttribution();
   if (name === "chat") {
+    loadSessionList();
     requestAnimationFrame(() => $("#chat-input")?.focus());
   }
 }
@@ -489,8 +524,6 @@ $$(".nav-btn, [data-view].btn-primary").forEach((el) => {
     if (el.dataset.view) switchView(el.dataset.view);
   });
 });
-
-$("#logout-btn")?.addEventListener("click", () => logout());
 
 $("#login-form")?.addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -1073,12 +1106,205 @@ function escapeHtml(str) {
     .replaceAll('"', "&quot;");
 }
 
+function truncateCheckpoint(text, max = 48) {
+  const s = String(text || "").replace(/\s+/g, " ").trim();
+  if (s.length <= max) return s || "Message";
+  return s.slice(0, max - 1).trimEnd() + "…";
+}
+
+let _checkpointHoverTimer = null;
+
+function userCheckpointBubbles() {
+  return $$("#chat-messages .bubble.user").filter(
+    (el) => !el.classList.contains("error") && el.dataset.checkpointId
+  );
+}
+
+function closeCheckpointPanel() {
+  const wrap = $("#chat-checkpoints");
+  const panel = $("#chat-checkpoint-panel");
+  const rail = $("#chat-checkpoint-rail");
+  if (panel) panel.hidden = true;
+  if (rail) rail.setAttribute("aria-expanded", "false");
+  wrap?.classList.remove("is-open");
+  if (_checkpointHoverTimer) {
+    clearTimeout(_checkpointHoverTimer);
+    _checkpointHoverTimer = null;
+  }
+}
+
+function openCheckpointPanel() {
+  const wrap = $("#chat-checkpoints");
+  const panel = $("#chat-checkpoint-panel");
+  const rail = $("#chat-checkpoint-rail");
+  if (!panel || !rail || wrap?.hidden) return;
+  if (_checkpointHoverTimer) {
+    clearTimeout(_checkpointHoverTimer);
+    _checkpointHoverTimer = null;
+  }
+  refreshCheckpoints();
+  panel.hidden = false;
+  rail.setAttribute("aria-expanded", "true");
+  wrap?.classList.add("is-open");
+}
+
+function scheduleCloseCheckpointPanel(delay = 180) {
+  if (_checkpointHoverTimer) clearTimeout(_checkpointHoverTimer);
+  _checkpointHoverTimer = setTimeout(() => {
+    _checkpointHoverTimer = null;
+    closeCheckpointPanel();
+  }, delay);
+}
+
+function jumpToCheckpoint(id) {
+  const el = document.querySelector(
+    `#chat-messages [data-checkpoint-id="${CSS.escape(id)}"]`
+  );
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+  el.classList.add("checkpoint-flash");
+  setTimeout(() => el.classList.remove("checkpoint-flash"), 900);
+  closeCheckpointPanel();
+  updateActiveCheckpointTick(id);
+}
+
+function updateActiveCheckpointTick(forcedId) {
+  const bubbles = userCheckpointBubbles();
+  if (!bubbles.length) return;
+  let activeId = forcedId || null;
+  if (!activeId) {
+    const container = $("#chat-messages");
+    const top = container ? container.getBoundingClientRect().top + 24 : 80;
+    let best = bubbles[0];
+    for (const b of bubbles) {
+      const rect = b.getBoundingClientRect();
+      if (rect.top <= top + 40) best = b;
+    }
+    if (container) {
+      const nearBottom =
+        container.scrollHeight - container.scrollTop - container.clientHeight < 48;
+      if (nearBottom) best = bubbles[bubbles.length - 1];
+    }
+    activeId = best.dataset.checkpointId;
+  }
+  $$("#chat-checkpoint-rail .chat-checkpoint-tick").forEach((tick) => {
+    tick.classList.toggle("active", tick.dataset.checkpointId === activeId);
+  });
+  $$("#chat-checkpoint-list .chat-checkpoint-item").forEach((item) => {
+    item.classList.toggle("active", item.dataset.checkpointId === activeId);
+  });
+}
+
+function refreshCheckpoints() {
+  const wrap = $("#chat-checkpoints");
+  const rail = $("#chat-checkpoint-rail");
+  const list = $("#chat-checkpoint-list");
+  const view = $("#view-chat");
+  const panelWasOpen = Boolean($("#chat-checkpoint-panel") && !$("#chat-checkpoint-panel").hidden);
+  if (!wrap || !rail || !list) return;
+
+  const bubbles = userCheckpointBubbles();
+  const show = Boolean(view?.classList.contains("chat-active") && bubbles.length >= 2);
+  wrap.hidden = !show;
+  if (!show) {
+    closeCheckpointPanel();
+    rail.innerHTML = "";
+    list.innerHTML = "";
+    return;
+  }
+
+  rail.innerHTML = bubbles
+    .map(
+      (b, i) =>
+        `<span class="chat-checkpoint-tick${i === bubbles.length - 1 ? " active" : ""}" data-checkpoint-id="${escapeHtml(b.dataset.checkpointId)}"></span>`
+    )
+    .join("");
+
+  list.innerHTML = bubbles
+    .map((b, i) => {
+      const label = truncateCheckpoint(b.textContent || "");
+      return `<li><button type="button" class="chat-checkpoint-item${i === bubbles.length - 1 ? " active" : ""}" data-checkpoint-id="${escapeHtml(b.dataset.checkpointId)}" title="${escapeHtml(b.textContent || "")}">${escapeHtml(label)}</button></li>`;
+    })
+    .join("");
+
+  updateActiveCheckpointTick();
+  if (panelWasOpen) {
+    const panel = $("#chat-checkpoint-panel");
+    if (panel) panel.hidden = false;
+    wrap.classList.add("is-open");
+    rail.setAttribute("aria-expanded", "true");
+  }
+}
+
+function initChatCheckpoints() {
+  if (initChatCheckpoints._bound) return;
+  initChatCheckpoints._bound = true;
+
+  const wrap = $("#chat-checkpoints");
+
+  wrap?.addEventListener("mouseenter", () => {
+    if (wrap.hidden) return;
+    openCheckpointPanel();
+  });
+  wrap?.addEventListener("mouseleave", () => {
+    scheduleCloseCheckpointPanel();
+  });
+
+  // Keep open while moving between rail and panel
+  $("#chat-checkpoint-panel")?.addEventListener("mouseenter", () => {
+    if (_checkpointHoverTimer) {
+      clearTimeout(_checkpointHoverTimer);
+      _checkpointHoverTimer = null;
+    }
+  });
+
+  $("#chat-checkpoint-rail")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const tick = e.target.closest?.(".chat-checkpoint-tick");
+    if (tick?.dataset.checkpointId) {
+      jumpToCheckpoint(tick.dataset.checkpointId);
+      return;
+    }
+    openCheckpointPanel();
+  });
+
+  $("#chat-checkpoint-list")?.addEventListener("click", (e) => {
+    const item = e.target.closest?.(".chat-checkpoint-item");
+    if (!item) return;
+    e.stopPropagation();
+    jumpToCheckpoint(item.dataset.checkpointId);
+  });
+
+  // Highlight the prompt under the pointer on the rail
+  $("#chat-checkpoint-rail")?.addEventListener("mousemove", (e) => {
+    const tick = e.target.closest?.(".chat-checkpoint-tick");
+    if (!tick?.dataset.checkpointId) return;
+    $$("#chat-checkpoint-list .chat-checkpoint-item").forEach((item) => {
+      item.classList.toggle("active", item.dataset.checkpointId === tick.dataset.checkpointId);
+    });
+  });
+
+  document.addEventListener("click", (e) => {
+    if (e.target.closest?.("#chat-checkpoints")) return;
+    closeCheckpointPanel();
+  });
+
+  $("#chat-messages")?.addEventListener("scroll", () => {
+    if ($("#chat-checkpoints")?.hidden) return;
+    updateActiveCheckpointTick();
+  });
+}
+
 function addBubble(role, text, isError = false) {
   const el = document.createElement("div");
   el.className = `bubble ${role}${isError ? " error" : ""}`;
   el.textContent = text;
+  if (role === "user" && !isError) {
+    el.dataset.checkpointId = `cp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+  }
   $("#chat-messages").appendChild(el);
   el.scrollIntoView({ behavior: "smooth", block: "end" });
+  refreshCheckpoints();
 }
 
 function enterChatActive() {
@@ -1086,6 +1312,7 @@ function enterChatActive() {
   if (!view) return;
   view.classList.remove("chat-home");
   view.classList.add("chat-active");
+  refreshCheckpoints();
 }
 
 function clearChatUi() {
@@ -1098,6 +1325,242 @@ function clearChatUi() {
   }
   const meta = $("#chat-meta");
   if (meta) meta.hidden = true;
+  closeCheckpointPanel();
+  refreshCheckpoints();
+}
+
+const CHAT_SESSION_KEY = "ampcus_chat_session_id";
+
+function makeSessionId() {
+  if (crypto?.randomUUID) return `sess_${crypto.randomUUID().replace(/-/g, "")}`;
+  return `sess_${Date.now().toString(16)}${Math.random().toString(16).slice(2)}`;
+}
+
+function getActiveSessionId() {
+  let id = localStorage.getItem(CHAT_SESSION_KEY);
+  if (!id) {
+    id = makeSessionId();
+    localStorage.setItem(CHAT_SESSION_KEY, id);
+  }
+  return id;
+}
+
+function setActiveSessionId(id) {
+  const sid = (id || "").trim() || makeSessionId();
+  localStorage.setItem(CHAT_SESSION_KEY, sid);
+  return sid;
+}
+
+const CHAT_META_KEY = "ampcus_chat_session_meta";
+let _sessionMenuSid = null;
+let _sessionMenuTitle = "";
+
+function readSessionMeta() {
+  try {
+    return JSON.parse(localStorage.getItem(CHAT_META_KEY) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+
+function writeSessionMeta(meta) {
+  localStorage.setItem(CHAT_META_KEY, JSON.stringify(meta || {}));
+}
+
+function getSessionFlags(sessionId) {
+  const row = readSessionMeta()[sessionId] || {};
+  return { starred: !!row.starred, unread: !!row.unread };
+}
+
+function setSessionFlag(sessionId, key, value) {
+  const meta = readSessionMeta();
+  const row = { ...(meta[sessionId] || {}) };
+  row[key] = !!value;
+  meta[sessionId] = row;
+  writeSessionMeta(meta);
+}
+
+function closeSessionMenu() {
+  const menu = $("#chat-session-menu");
+  if (menu) menu.hidden = true;
+  $$("#chat-session-list .chat-session-item.menu-open").forEach((li) =>
+    li.classList.remove("menu-open")
+  );
+  _sessionMenuSid = null;
+  _sessionMenuTitle = "";
+}
+
+function openSessionMenu(anchor, sessionId, title) {
+  const menu = $("#chat-session-menu");
+  if (!menu || !anchor) return;
+  closeSessionMenu();
+  _sessionMenuSid = sessionId;
+  _sessionMenuTitle = title || "";
+  const flags = getSessionFlags(sessionId);
+  const starLabel = menu.querySelector("[data-star-label]");
+  const unreadLabel = menu.querySelector("[data-unread-label]");
+  if (starLabel) starLabel.textContent = flags.starred ? "Unstar" : "Star";
+  if (unreadLabel) unreadLabel.textContent = flags.unread ? "Mark as read" : "Mark as unread";
+  menu.hidden = false;
+  const rect = anchor.getBoundingClientRect();
+  const menuW = menu.offsetWidth || 200;
+  const menuH = menu.offsetHeight || 160;
+  let left = rect.right - menuW;
+  let top = rect.bottom + 4;
+  if (left < 8) left = 8;
+  if (top + menuH > window.innerHeight - 8) top = Math.max(8, rect.top - menuH - 4);
+  menu.style.left = `${left}px`;
+  menu.style.top = `${top}px`;
+  anchor.closest(".chat-session-item")?.classList.add("menu-open");
+}
+
+async function renameChatSession(sessionId, currentTitle) {
+  const next = prompt("Rename chat", currentTitle || "");
+  if (next == null) return;
+  const title = next.trim();
+  if (!title) return;
+  const res = await api(`/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ title }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert(err.detail || `Rename failed (${res.status})`);
+    return;
+  }
+  await loadSessionList();
+}
+
+function startNewChat() {
+  setActiveSessionId(makeSessionId());
+  clearChatUi();
+  switchView("chat");
+  renderSessionListActive();
+  $("#chat-input")?.focus();
+}
+
+async function loadSessionList() {
+  const list = $("#chat-session-list");
+  if (!list) return;
+  closeSessionMenu();
+  try {
+    const res = await api("/sessions");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const sessions = await res.json();
+    if (!sessions.length) {
+      list.innerHTML = `<li class="chat-session-empty">No past chats yet</li>`;
+      return;
+    }
+    const active = getActiveSessionId();
+    list.innerHTML = sessions
+      .map((s) => {
+        const flags = getSessionFlags(s.session_id);
+        const classes = [
+          "chat-session-item",
+          s.session_id === active ? "active" : "",
+          flags.starred ? "starred" : "",
+          flags.unread ? "unread" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        return `
+      <li class="${classes}" data-session-id="${escapeHtml(s.session_id)}" data-title="${escapeHtml(s.title || "Chat")}">
+        <button type="button" class="chat-session-open" title="${escapeHtml(s.title || "Chat")}">${escapeHtml(s.title || "Chat")}</button>
+        <button type="button" class="chat-session-more" title="Chat options" aria-label="Chat options" aria-haspopup="menu">⋯</button>
+      </li>`;
+      })
+      .join("");
+  } catch (err) {
+    console.warn("session list failed", err);
+    list.innerHTML = `<li class="chat-session-empty">Could not load history</li>`;
+  }
+}
+
+function renderSessionListActive() {
+  const active = getActiveSessionId();
+  $$("#chat-session-list .chat-session-item").forEach((li) => {
+    li.classList.toggle("active", li.dataset.sessionId === active);
+  });
+}
+
+async function openChatSession(sessionId) {
+  if (!sessionId) return;
+  setActiveSessionId(sessionId);
+  setSessionFlag(sessionId, "unread", false);
+  switchView("chat");
+  clearChatUi();
+  try {
+    const res = await api(`/sessions/${encodeURIComponent(sessionId)}/messages`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const messages = await res.json();
+    if (messages.length) {
+      enterChatActive();
+      for (const m of messages) {
+        const role = m.role === "assistant" ? "bot" : "user";
+        addBubble(role, m.content || "");
+      }
+    }
+  } catch (err) {
+    addBubble("bot", `Could not load chat: ${err.message}`, true);
+  }
+  await loadSessionList();
+  $("#chat-input")?.focus();
+}
+
+function initChatSessions() {
+  getActiveSessionId();
+  $("#chat-new-btn")?.addEventListener("click", () => {
+    closeSessionMenu();
+    startNewChat();
+    loadSessionList();
+  });
+  $("#chat-session-list")?.addEventListener("click", (e) => {
+    const more = e.target.closest?.(".chat-session-more");
+    const open = e.target.closest?.(".chat-session-open");
+    const item = e.target.closest?.(".chat-session-item");
+    if (!item) return;
+    const sid = item.dataset.sessionId;
+    if (more) {
+      e.preventDefault();
+      e.stopPropagation();
+      openSessionMenu(more, sid, item.dataset.title || "");
+      return;
+    }
+    if (open) openChatSession(sid);
+  });
+  $("#chat-session-menu")?.addEventListener("click", async (e) => {
+    const btn = e.target.closest?.("[data-action]");
+    if (!btn || !_sessionMenuSid) return;
+    e.stopPropagation();
+    const sid = _sessionMenuSid;
+    const title = _sessionMenuTitle;
+    const action = btn.dataset.action;
+    closeSessionMenu();
+    if (action === "star") {
+      const flags = getSessionFlags(sid);
+      setSessionFlag(sid, "starred", !flags.starred);
+      await loadSessionList();
+      return;
+    }
+    if (action === "unread") {
+      const flags = getSessionFlags(sid);
+      setSessionFlag(sid, "unread", !flags.unread);
+      await loadSessionList();
+      return;
+    }
+    if (action === "rename") {
+      await renameChatSession(sid, title);
+      return;
+    }
+    if (action === "project") {
+      alert("Projects are not available in this demo yet.");
+    }
+  });
+  document.addEventListener("click", (e) => {
+    if (e.target.closest?.("#chat-session-menu") || e.target.closest?.(".chat-session-more")) return;
+    closeSessionMenu();
+  });
+  window.addEventListener("resize", () => closeSessionMenu());
 }
 
 async function resetSession() {
@@ -1112,6 +1575,7 @@ async function resetSession() {
     return;
   }
   clearChatUi();
+  startNewChat();
   await loadStats();
   if ($("#view-insights")?.classList.contains("active")) {
     await loadInsights();
@@ -1223,14 +1687,17 @@ async function ask(question) {
       body: JSON.stringify({
         question: q,
         model_preference: selectedModelPreference(),
+        session_id: getActiveSessionId(),
       }),
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    if (data.session_id) setActiveSessionId(data.session_id);
     thinking.remove();
     addBubble("bot", data.answer || "(empty answer)");
     showMeta(data);
     loadStats();
+    loadSessionList();
   } catch (err) {
     thinking.remove();
     addBubble("bot", `Error: ${err.message}`, true);
@@ -1254,6 +1721,8 @@ $("#chat-input").addEventListener("keydown", (e) => {
 });
 
 initChatModelSelect();
+initChatSessions();
+initChatCheckpoints();
 
 $("#chat-attach")?.addEventListener("click", () => {
   alert("Attachments are not enabled in this MVP.");

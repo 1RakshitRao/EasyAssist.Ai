@@ -14,6 +14,10 @@ class QueryRequest(BaseModel):
         default="auto",
         description="auto | routine | high | opus — answer-model tier override",
     )
+    session_id: Optional[str] = Field(
+        default=None,
+        description="Chat session id; created automatically when omitted",
+    )
 
 
 class QueryResponse(BaseModel):
@@ -35,6 +39,32 @@ class QueryResponse(BaseModel):
     node_timings: Dict[str, float] = Field(default_factory=dict)
     prompt_score: Optional[int] = None
     prompt_feedback: Optional[Dict[str, Any]] = None
+    session_id: Optional[str] = None
+
+
+class SessionCreateResponse(BaseModel):
+    session_id: str
+
+
+class SessionSummary(BaseModel):
+    session_id: str
+    title: str
+    created_at: str
+    last_message_at: str
+    message_count: int
+
+
+class SessionRenameRequest(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+
+
+class SessionMessage(BaseModel):
+    id: str
+    role: str
+    content: str
+    created_at: str
+    department: Optional[str] = None
+    cost_usd: Optional[float] = None
 
 
 class IngestRequest(BaseModel):

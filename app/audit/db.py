@@ -53,6 +53,31 @@ CREATE TABLE IF NOT EXISTS user_training (
     access_restricted INTEGER DEFAULT 0,
     restriction_lifted_at TEXT
 );
+
+CREATE TABLE IF NOT EXISTS chat_sessions (
+    session_id TEXT PRIMARY KEY,
+    user_email TEXT NOT NULL,
+    title TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_email_updated
+ON chat_sessions(user_email, updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    user_email TEXT NOT NULL,
+    role TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    department TEXT,
+    cost_usd REAL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created
+ON chat_messages(session_id, created_at);
 """
 
 

@@ -6,7 +6,7 @@ import logging
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from app.agents.graph import run_pipeline
 from app.agents.normalize import normalize_query
@@ -18,6 +18,7 @@ from app.audit.enforcement import apply_enforcement
 from app.audit.store import append_event
 from app.auth.deps import CurrentUser
 from app.cache.semantic_cache import get_semantic_cache
+from app.chat.store import CHAT_CONTEXT_LIMIT, ensure_session, load_history, save_message
 from app.config import get_settings
 from app.models.schemas import QueryRequest, QueryResponse
 
@@ -36,6 +37,61 @@ def _latency_ms(node_timings: dict) -> float:
     if not node_timings:
         return 0.0
     return float(sum(float(v or 0) for v in node_timings.values()))
+
+
+def _resolve_session(req: QueryRequest, user: dict) -> tuple[str, list]:
+    """Ensure session exists, return (session_id, prior history for LLM)."""
+    email = str(user.get("email") or "")
+    try:
+        session_id = ensure_session(req.session_id, email, title_seed=req.question)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    history = load_history(session_id, email, limit=CHAT_CONTEXT_LIMIT)
+    return session_id, history
+
+
+def _save_user_message(*, session_id: str, user: dict, question: str) -> None:
+    email = str(user.get("email") or "")
+    try:
+        save_message(
+            session_id=session_id,
+            user_email=email,
+            role="user",
+            content=question,
+        )
+    except PermissionError as exc:
+        logger.warning("chat user persist failed: %s", exc)
+    except Exception:
+        logger.exception("chat user persist failed session=%s", session_id)
+
+
+def _save_assistant_message(
+    *,
+    session_id: str,
+    user: dict,
+    response: QueryResponse,
+) -> None:
+    email = str(user.get("email") or "")
+    try:
+        costs = costs_for_query(
+            model_used=response.model_used,
+            token_usage=response.token_usage,
+            from_cache=bool(response.cached),
+            severity=response.severity,
+            escalated=response.escalated,
+        )
+        save_message(
+            session_id=session_id,
+            user_email=email,
+            role="assistant",
+            content=response.answer or "",
+            department=response.department,
+            cost_usd=float(costs.get("cost_usd") or 0),
+        )
+    except PermissionError as exc:
+        logger.warning("chat assistant persist failed: %s", exc)
+    except Exception:
+        logger.exception("chat assistant persist failed session=%s", session_id)
 
 
 def _append_audit(
@@ -78,7 +134,6 @@ def _append_audit(
             "department": response.department,
             "severity": response.severity,
             "model_used": response.model_used,
-            
             "input_tokens": costs["input_tokens"],
             "output_tokens": costs["output_tokens"],
             "cost_usd": costs["cost_usd"],
@@ -106,6 +161,10 @@ def query(req: QueryRequest, user: CurrentUser) -> QueryResponse:
     timings: dict[str, float] = {}
     t0 = time.perf_counter()
 
+    session_id, prior_history = _resolve_session(req, user)
+    has_prior = bool(prior_history)
+    _save_user_message(session_id=session_id, user=user, question=req.question)
+
     # Soft gate — do not run pipeline when restricted
     if user.get("access_restricted"):
         response = QueryResponse(
@@ -118,6 +177,7 @@ def query(req: QueryRequest, user: CurrentUser) -> QueryResponse:
             classify_reason="access_restricted",
             context_used=False,
             node_timings={"gate": round((time.perf_counter() - t0) * 1000, 2)},
+            session_id=session_id,
         )
         _append_audit(
             user=user,
@@ -127,6 +187,7 @@ def query(req: QueryRequest, user: CurrentUser) -> QueryResponse:
             intent="restricted",
             from_cache=False,
         )
+        _save_assistant_message(session_id=session_id, user=user, response=response)
         payload = response.model_dump()
         payload["_question"] = req.question
         record_query(payload, cached=False)
@@ -137,7 +198,8 @@ def query(req: QueryRequest, user: CurrentUser) -> QueryResponse:
 
     similarity = 0.0
     cached_payload = None
-    if settings.semantic_cache_enabled:
+    # Skip semantic cache when the session already has prior turns
+    if settings.semantic_cache_enabled and not has_prior:
         sem = get_semantic_cache()
         with timed(timings, "semantic_cache_lookup"):
             cached_payload, similarity = sem.lookup(
@@ -157,9 +219,11 @@ def query(req: QueryRequest, user: CurrentUser) -> QueryResponse:
         node_timings = dict(cached.get("node_timings") or {})
         node_timings.update(timings)
         cached["node_timings"] = node_timings
+        cached["session_id"] = session_id
         response = QueryResponse(
             **{k: v for k, v in cached.items() if k in QueryResponse.model_fields}
         )
+        response.session_id = session_id
         _append_audit(
             user=user,
             question=req.question,
@@ -168,6 +232,7 @@ def query(req: QueryRequest, user: CurrentUser) -> QueryResponse:
             intent="helpdesk_query",
             from_cache=True,
         )
+        _save_assistant_message(session_id=session_id, user=user, response=response)
         payload = response.model_dump()
         payload["_question"] = req.question
         record_query(payload, cached=True)
@@ -184,6 +249,8 @@ def query(req: QueryRequest, user: CurrentUser) -> QueryResponse:
             user_id=user.get("id"),
             user_email=user.get("email"),
             model_preference=req.model_preference,
+            session_id=session_id,
+            conversation_history=prior_history,
         )
         score = score_fut.result()
         result = pipe_fut.result()
@@ -208,11 +275,13 @@ def query(req: QueryRequest, user: CurrentUser) -> QueryResponse:
         context_used=bool(result.get("context_used")),
         token_usage=dict(result.get("token_usage") or {}),
         node_timings=node_timings,
+        session_id=session_id,
     )
 
-    # Cache only routine + grounded (non-escalated) answers
+    # Cache only routine + grounded (non-escalated) answers on fresh sessions
     if (
         settings.semantic_cache_enabled
+        and not has_prior
         and response.severity == "routine"
         and response.context_used
         and not response.escalated
@@ -235,6 +304,7 @@ def query(req: QueryRequest, user: CurrentUser) -> QueryResponse:
         intent="helpdesk_query",
         from_cache=False,
     )
+    _save_assistant_message(session_id=session_id, user=user, response=response)
     payload = response.model_dump()
     payload["_question"] = req.question
     record_query(payload, cached=False)
