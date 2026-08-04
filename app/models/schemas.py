@@ -164,3 +164,46 @@ class CreateUserRequest(BaseModel):
     password: str = Field(..., min_length=8)
     role: str = Field(..., description="employee | agent | admin")
     name: str = ""
+
+
+class NlpQueryRequest(BaseModel):
+    question: str = Field(..., min_length=1)
+    session_id: Optional[str] = Field(
+        default=None,
+        description="Chat session id; created automatically when omitted",
+    )
+
+
+class NlpQueryResponse(BaseModel):
+    answer: str
+    allowed: bool
+    blocked_reason: Optional[str] = None
+    role: str
+    block_kind: Optional[str] = None
+    sql: Optional[str] = None  # formatted for display
+    sql_raw: Optional[str] = None  # executed statement (admin)
+    row_count: Optional[int] = None
+    session_id: Optional[str] = None
+    model_used: Optional[str] = None
+    token_usage: Dict[str, int] = Field(default_factory=dict)
+    cost_usd: Optional[float] = None
+
+
+class CompanyFactCreate(BaseModel):
+    category: str = Field(..., min_length=1)
+    name: str = Field(..., min_length=1)
+    description: str = ""
+    detail_1: str = ""
+    detail_2: str = ""
+    active: bool = True
+
+
+class CompanyFactOut(BaseModel):
+    id: str
+    category: str
+    name: str
+    description: Optional[str] = None
+    detail_1: Optional[str] = None
+    detail_2: Optional[str] = None
+    active: int = 1
+    created_at: str

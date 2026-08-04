@@ -19,6 +19,7 @@ from app.api.routes_health import router as health_router
 from app.api.routes_ingest import router as ingest_router
 from app.api.routes_kb import router as kb_router
 from app.api.routes_notifications import router as notifications_router
+from app.api.routes_nlp_query import router as nlp_query_router
 from app.api.routes_query import router as query_router
 from app.api.routes_sessions import router as sessions_router
 from app.api.routes_stats import router as stats_router
@@ -27,6 +28,8 @@ from app.audit.db import init_audit_db
 from app.auth.users import bootstrap_admin_if_empty
 from app.cache.redis_cache import get_cache
 from app.config import get_settings
+from app.nlp_query.company_facts import seed_company_facts_if_empty
+from app.nlp_query.sync import refresh_kb_stats, sync_app_users
 from app.rag.chroma_store import get_store
 
 logging.basicConfig(
@@ -63,6 +66,15 @@ async def lifespan(_app: FastAPI):
     logger.info("Collection counts: %s", store.collection_counts())
     bootstrap_admin_if_empty()
     init_audit_db()
+    seed_company_facts_if_empty()
+    try:
+        sync_app_users()
+    except Exception:
+        logger.warning("app_users sync failed on startup", exc_info=True)
+    try:
+        refresh_kb_stats(store.collection_counts())
+    except Exception:
+        logger.warning("kb_stats refresh failed on startup", exc_info=True)
     stop = asyncio.Event()
     reminder_task = asyncio.create_task(_board_monitor_loop(stop))
     logger.info("BoardMonitorAgent started (escalation board SLA)")
@@ -86,6 +98,7 @@ app = FastAPI(
 app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(query_router)
+app.include_router(nlp_query_router)
 app.include_router(sessions_router)
 app.include_router(ingest_router)
 app.include_router(kb_router)

@@ -78,6 +78,56 @@ CREATE TABLE IF NOT EXISTS chat_messages (
 
 CREATE INDEX IF NOT EXISTS idx_chat_messages_session_created
 ON chat_messages(session_id, created_at);
+
+CREATE TABLE IF NOT EXISTS company_facts (
+    id TEXT PRIMARY KEY,
+    category TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    detail_1 TEXT,
+    detail_2 TEXT,
+    active INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL,
+    details TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_company_facts_category
+ON company_facts(category, active);
+
+CREATE TABLE IF NOT EXISTS kb_stats (
+    department TEXT PRIMARY KEY,
+    doc_count INTEGER DEFAULT 0,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_users (
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL,
+    name TEXT,
+    role TEXT NOT NULL,
+    active INTEGER DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_app_users_email
+ON app_users(email);
+
+CREATE TABLE IF NOT EXISTS nlp_query_logs (
+    id TEXT PRIMARY KEY,
+    timestamp TEXT NOT NULL,
+    user_id TEXT,
+    user_email TEXT,
+    user_role TEXT,
+    question TEXT NOT NULL,
+    sql_text TEXT,
+    answer TEXT,
+    allowed INTEGER NOT NULL DEFAULT 0,
+    block_kind TEXT,
+    row_count INTEGER,
+    session_id TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_nlp_query_logs_ts
+ON nlp_query_logs(timestamp DESC);
 """
 
 

@@ -110,6 +110,12 @@ def create_user(
         users.append(user)
         _write_all(users)
     logger.info("Created user email=%s role=%s", email_key, role_key)
+    try:
+        from app.nlp_query.sync import sync_app_users
+
+        sync_app_users()
+    except Exception:
+        logger.warning("app_users sync after create_user failed", exc_info=True)
     return dict(user)
 
 
