@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/styles.css?v=claude5" />
+  <link rel="stylesheet" href="/static/styles.css?v=claude15" />
 </head>
 <body class="is-login">
   <div id="login-screen" class="login-screen">
@@ -108,6 +108,10 @@
         <button class="nav-btn" data-view="attribution" data-roles="admin" title="User attribution" aria-label="User attribution">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
           <span class="sidebar-label">User Attribution</span>
+        </button>
+        <button class="nav-btn" data-view="nlp-logs" data-roles="admin" title="Company data logs" aria-label="Company data logs">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+          <span class="sidebar-label">Data Logs</span>
         </button>
       </nav>
       <div class="sidebar-recents" id="sidebar-recents">
@@ -355,11 +359,17 @@
                 required
               ></textarea>
               <div class="composer-toolbar">
-                <button type="button" class="icon-btn" title="Attach" aria-label="Attach" id="chat-attach">
-                  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 5v14M5 12h14"/>
-                  </svg>
-                </button>
+                <div class="composer-toolbar-left">
+                  <button type="button" class="icon-btn" title="Attach" aria-label="Attach" id="chat-attach">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M12 5v14M5 12h14"/>
+                    </svg>
+                  </button>
+                  <div class="composer-mode" id="chat-mode-wrap" role="group" aria-label="Answer source">
+                    <button type="button" class="composer-mode-btn" data-mode="kb" id="chat-mode-kb" aria-pressed="true">Chat</button>
+                    <button type="button" class="composer-mode-btn" data-mode="nlp" id="chat-mode-nlp" aria-pressed="false">Company data</button>
+                  </div>
+                </div>
                 <div class="composer-toolbar-right">
                   <div class="composer-model" id="chat-model-wrap">
                     <button type="button" class="composer-model-btn" id="chat-model-btn" aria-haspopup="listbox" aria-expanded="false" aria-label="Choose answer model">
@@ -559,7 +569,7 @@
 
         <div class="kpi-row">
           <article class="kpi-card">
-            <p class="kpi-label">Blended cost (session)</p>
+            <p class="kpi-label">Blended cost</p>
             <h2 id="ins-cost-actual">$0</h2>
             <p class="kpi-sub" id="ins-cost-actual-sub">smart routing</p>
           </article>
@@ -704,6 +714,54 @@
           </div>
         </article>
       </section>
+
+      <!-- COMPANY DATA LOGS (admin) -->
+      <section id="view-nlp-logs" class="view">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">NLP pipeline</p>
+            <h1> Data Logs</h1>
+          </div>
+          <button id="refresh-nlp-logs" class="chip" type="button">Refresh</button>
+        </header>
+        <p class="section-blurb">
+           Use this to audit access blocks and SQL quality.
+        </p>
+
+        <article class="panel">
+          <div class="panel-head">
+            <h3>Recent NLP turns</h3>
+            <p>Question → SQL → Answer </p>
+          </div>
+          <div class="table-wrap">
+            <table class="insights-table nlp-logs-table" id="nlp-logs-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>User</th>
+                  <th>Role</th>
+                  <th>Access</th>
+                  <th>Question</th>
+                  <th>SQL</th>
+                  <th>Answer</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+
+      <div class="text-preview-modal" id="text-preview-modal" hidden>
+        <div class="text-preview-backdrop" id="text-preview-backdrop"></div>
+        <div class="text-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="text-preview-title">
+          <header class="text-preview-top">
+            <h3 id="text-preview-title">Detail</h3>
+            <button type="button" class="chip" id="text-preview-close">Close</button>
+          </header>
+          <pre class="text-preview-body" id="text-preview-body"></pre>
+        </div>
+      </div>
     </main>
     <div class="chat-session-menu" id="chat-session-menu" hidden role="menu">
       <button type="button" class="chat-session-menu-item" data-action="star" role="menuitem">
@@ -725,6 +783,6 @@
       </button>
     </div>
   </div>
-  <script src="/static/app.js?v=claude5"></script>
+  <script src="/static/app.js?v=claude13"></script>
 </body>
 </html>

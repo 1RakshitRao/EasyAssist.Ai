@@ -501,7 +501,7 @@ function switchView(name) {
   if (name === "dashboard" && !["agent", "admin"].includes(role)) {
     name = "chat";
   }
-  if ((name === "insights" || name === "attribution") && role !== "admin") {
+  if ((name === "insights" || name === "attribution" || name === "nlp-logs") && role !== "admin") {
     name = "chat";
   }
   $$(".view").forEach((v) => v.classList.remove("active"));
@@ -513,6 +513,7 @@ function switchView(name) {
   if (name === "tickets") loadTickets();
   if (name === "insights") loadInsights();
   if (name === "attribution") loadUserAttribution();
+  if (name === "nlp-logs") loadNlpLogs();
   if (name === "chat") {
     loadSessionList();
     requestAnimationFrame(() => $("#chat-input")?.focus());
@@ -1161,7 +1162,13 @@ function jumpToCheckpoint(id) {
     `#chat-messages [data-checkpoint-id="${CSS.escape(id)}"]`
   );
   if (!el) return;
-  el.scrollIntoView({ behavior: "smooth", block: "start" });
+  const container = $("#chat-messages");
+  if (container) {
+    const top = el.offsetTop - 12;
+    container.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  } else {
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
   el.classList.add("checkpoint-flash");
   setTimeout(() => el.classList.remove("checkpoint-flash"), 900);
   closeCheckpointPanel();
@@ -1303,7 +1310,10 @@ function addBubble(role, text, isError = false) {
     el.dataset.checkpointId = `cp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
   }
   $("#chat-messages").appendChild(el);
-  el.scrollIntoView({ behavior: "smooth", block: "end" });
+  const container = $("#chat-messages");
+  if (container) {
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+  }
   refreshCheckpoints();
 }
 
@@ -1585,9 +1595,51 @@ async function resetSession() {
   }
 }
 
+function setMetaLabels(mode) {
+  const labels = {
+    kb: {
+      dept: "Dept",
+      sev: "Severity",
+      cached: "Cached",
+      sim: "Sim",
+      esc: "Escalated",
+      ticket: "Ticket",
+      sources: "Sources",
+      model: "Model",
+    },
+    nlp: {
+      dept: "Mode",
+      sev: "Access",
+      cached: "Role",
+      sim: "Rows",
+      esc: "Block",
+      ticket: "Ticket",
+      sources: "Detail",
+      model: "Model",
+    },
+  };
+  const L = labels[mode] || labels.kb;
+  const map = [
+    ["meta-dept", L.dept],
+    ["meta-sev", L.sev],
+    ["meta-cached", L.cached],
+    ["meta-sim", L.sim],
+    ["meta-esc", L.esc],
+    ["meta-ticket", L.ticket],
+    ["meta-sources", L.sources],
+    ["meta-model", L.model],
+  ];
+  for (const [id, text] of map) {
+    const el = document.getElementById(id);
+    const bold = el?.previousElementSibling;
+    if (bold && bold.tagName === "B") bold.textContent = text;
+  }
+}
+
 function showMeta(data) {
   const meta = $("#chat-meta");
   if (meta) meta.hidden = false;
+  setMetaLabels("kb");
   $("#meta-dept").textContent = data.department || "—";
   $("#meta-sev").textContent = data.severity || "—";
   $("#meta-model").textContent = data.model_used || "—";
@@ -1601,7 +1653,14 @@ function showMeta(data) {
   $("#meta-sources").textContent = (data.sources || []).join(", ") || "—";
 }
 
+function showNlpMeta(_data) {
+  // Company-data replies should not show the debug/meta strip under chat.
+  const meta = $("#chat-meta");
+  if (meta) meta.hidden = true;
+}
+
 const CHAT_MODEL_KEY = "ampcus_chat_model_preference";
+const CHAT_MODE_KEY = "ampcus_chat_answer_mode";
 const CHAT_MODEL_OPTIONS = {
   auto: { name: "Auto", effort: "Auto" },
   routine: { name: "Haiku", effort: "Low" },
@@ -1610,10 +1669,46 @@ const CHAT_MODEL_OPTIONS = {
 };
 let _askInFlight = false;
 let _chatModelValue = "auto";
+let _chatAnswerMode = "kb"; // kb | nlp
 
 function selectedModelPreference() {
   const value = (_chatModelValue || "auto").toLowerCase();
   return CHAT_MODEL_OPTIONS[value] ? value : "auto";
+}
+
+function selectedAnswerMode() {
+  return _chatAnswerMode === "nlp" ? "nlp" : "kb";
+}
+
+function applyChatAnswerMode() {
+  const mode = selectedAnswerMode();
+  const kbBtn = $("#chat-mode-kb");
+  const nlpBtn = $("#chat-mode-nlp");
+  const modelWrap = $("#chat-model-wrap");
+  const input = $("#chat-input");
+  if (kbBtn) kbBtn.setAttribute("aria-pressed", mode === "kb" ? "true" : "false");
+  if (nlpBtn) nlpBtn.setAttribute("aria-pressed", mode === "nlp" ? "true" : "false");
+  if (modelWrap) modelWrap.classList.toggle("is-nlp-hidden", mode === "nlp");
+  if (input) {
+    input.placeholder =
+      mode === "nlp"
+        ? "Ask about clients, services, locations, products, team, partnerships…"
+        : "How can I help you today?";
+  }
+  if (mode === "nlp") closeChatModelMenu();
+}
+
+function setChatAnswerMode(mode, { persist = true } = {}) {
+  _chatAnswerMode = mode === "nlp" ? "nlp" : "kb";
+  applyChatAnswerMode();
+  if (persist) localStorage.setItem(CHAT_MODE_KEY, _chatAnswerMode);
+}
+
+function initChatAnswerMode() {
+  const saved = localStorage.getItem(CHAT_MODE_KEY) || "kb";
+  setChatAnswerMode(saved, { persist: false });
+  $("#chat-mode-kb")?.addEventListener("click", () => setChatAnswerMode("kb"));
+  $("#chat-mode-nlp")?.addEventListener("click", () => setChatAnswerMode("nlp"));
 }
 
 function setChatModelPreference(value, { persist = true } = {}) {
@@ -1649,7 +1744,7 @@ function initChatModelSelect() {
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (btn.disabled) return;
+    if (btn.disabled || selectedAnswerMode() === "nlp") return;
     const open = menu.hidden;
     menu.hidden = !open;
     btn.setAttribute("aria-expanded", open ? "true" : "false");
@@ -1678,26 +1773,88 @@ async function ask(question) {
   const modelBtn = $("#chat-model-btn");
   if (modelBtn) modelBtn.disabled = true;
   closeChatModelMenu();
-  addBubble("bot", "Thinking… (local models can take ~30–60s)");
+  const nlpMode = selectedAnswerMode() === "nlp";
+  addBubble(
+    "bot",
+    nlpMode
+      ? "Checking company data…"
+      : "Thinking… (local models can take ~30–60s)"
+  );
   const thinking = $("#chat-messages").lastElementChild;
 
+  const isStaleSessionError = (err) =>
+    /session belongs to another user/i.test(String(err?.message || err || ""));
+
   try {
-    const res = await api("/query", {
-      method: "POST",
-      body: JSON.stringify({
-        question: q,
-        model_preference: selectedModelPreference(),
-        session_id: getActiveSessionId(),
-      }),
-    });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = await res.json();
-    if (data.session_id) setActiveSessionId(data.session_id);
-    thinking.remove();
-    addBubble("bot", data.answer || "(empty answer)");
-    showMeta(data);
-    loadStats();
-    loadSessionList();
+    if (nlpMode) {
+      let data;
+      try {
+        const res = await api("/nlp-query", {
+          method: "POST",
+          body: JSON.stringify({
+            question: q,
+            session_id: getActiveSessionId(),
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        data = await res.json();
+      } catch (err) {
+        if (!isStaleSessionError(err)) throw err;
+        setActiveSessionId(makeSessionId());
+        const res = await api("/nlp-query", {
+          method: "POST",
+          body: JSON.stringify({
+            question: q,
+            session_id: getActiveSessionId(),
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        data = await res.json();
+      }
+      if (data.session_id) setActiveSessionId(data.session_id);
+      thinking.remove();
+      const blocked = data.allowed === false;
+      addBubble(
+        "bot",
+        data.answer || (blocked ? "Request blocked." : "(empty answer)"),
+        blocked
+      );
+      showNlpMeta(data);
+      loadSessionList();
+    } else {
+      let data;
+      try {
+        const res = await api("/query", {
+          method: "POST",
+          body: JSON.stringify({
+            question: q,
+            model_preference: selectedModelPreference(),
+            session_id: getActiveSessionId(),
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        data = await res.json();
+      } catch (err) {
+        if (!isStaleSessionError(err)) throw err;
+        setActiveSessionId(makeSessionId());
+        const res = await api("/query", {
+          method: "POST",
+          body: JSON.stringify({
+            question: q,
+            model_preference: selectedModelPreference(),
+            session_id: getActiveSessionId(),
+          }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        data = await res.json();
+      }
+      if (data.session_id) setActiveSessionId(data.session_id);
+      thinking.remove();
+      addBubble("bot", data.answer || "(empty answer)");
+      showMeta(data);
+      loadStats();
+      loadSessionList();
+    }
   } catch (err) {
     thinking.remove();
     addBubble("bot", `Error: ${err.message}`, true);
@@ -1720,6 +1877,7 @@ $("#chat-input").addEventListener("keydown", (e) => {
   }
 });
 
+initChatAnswerMode();
 initChatModelSelect();
 initChatSessions();
 initChatCheckpoints();
@@ -2095,6 +2253,75 @@ $("#reset-session")?.addEventListener("click", () => resetSession());
 $("#refresh-kb")?.addEventListener("click", () => loadKnowledgeBase());
 $("#refresh-tickets")?.addEventListener("click", loadTickets);
 $("#refresh-insights")?.addEventListener("click", loadInsights);
+$("#refresh-nlp-logs")?.addEventListener("click", loadNlpLogs);
+
+function openTextPreview(title, text) {
+  const modal = $("#text-preview-modal");
+  const titleEl = $("#text-preview-title");
+  const body = $("#text-preview-body");
+  if (!modal || !body) return;
+  if (titleEl) titleEl.textContent = title || "Detail";
+  body.textContent = text || "—";
+  modal.hidden = false;
+  document.body.classList.add("text-preview-open");
+}
+
+function closeTextPreview() {
+  const modal = $("#text-preview-modal");
+  if (modal) modal.hidden = true;
+  document.body.classList.remove("text-preview-open");
+}
+
+function nlpClipButton(label, fullText, extraClass = "") {
+  const text = fullText || "—";
+  return `<button type="button" class="nlp-clip-btn ${extraClass}" data-preview-title="${escapeHtml(label)}" data-preview-text="${escapeHtml(text)}" title="Click to expand">${escapeHtml(text)}</button>`;
+}
+
+async function loadNlpLogs() {
+  const tbody = $("#nlp-logs-table tbody");
+  if (!tbody) return;
+  tbody.innerHTML = `<tr><td colspan="7">Loading…</td></tr>`;
+  try {
+    const res = await api("/admin/nlp-logs?limit=100");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const logs = data.logs || [];
+    if (!logs.length) {
+      tbody.innerHTML = `<tr><td colspan="7">No Company data queries logged yet.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = logs
+      .map((r) => {
+        const ts = (r.timestamp || "").replace("T", " ").slice(0, 19);
+        const access = r.allowed
+          ? "allowed"
+          : `blocked${r.block_kind ? ` (${escapeHtml(r.block_kind)})` : ""}`;
+        return `<tr>
+          <td class="mono">${escapeHtml(ts)}</td>
+          <td>${escapeHtml(r.user_email || "—")}</td>
+          <td>${escapeHtml(r.user_role || "—")}</td>
+          <td>${access}</td>
+          <td class="nlp-clip">${nlpClipButton("Question", r.question || "", "nlp-q-btn")}</td>
+          <td class="nlp-clip">${nlpClipButton("SQL", r.sql || "—", "nlp-sql-btn")}</td>
+          <td class="nlp-clip">${nlpClipButton("Answer", r.answer || "", "nlp-q-btn")}</td>
+        </tr>`;
+      })
+      .join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7">Failed to load: ${escapeHtml(err.message)}</td></tr>`;
+  }
+}
+
+$("#nlp-logs-table")?.addEventListener("click", (e) => {
+  const btn = e.target.closest?.(".nlp-clip-btn");
+  if (!btn) return;
+  openTextPreview(btn.dataset.previewTitle || "Detail", btn.dataset.previewText || "");
+});
+$("#text-preview-close")?.addEventListener("click", closeTextPreview);
+$("#text-preview-backdrop")?.addEventListener("click", closeTextPreview);
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("#text-preview-modal")?.hidden) closeTextPreview();
+});
 $("#refresh-attribution")?.addEventListener("click", loadUserAttribution);
 
 function money(n) {
