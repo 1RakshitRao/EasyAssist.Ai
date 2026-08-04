@@ -78,7 +78,9 @@ class Settings(BaseSettings):
 
     # Chat document assistant
     document_max_bytes: int = 10_485_760  # 10MB
-    document_ttl_seconds: int = 7200  # 2 hours
+    document_ttl_seconds: int = 7200  # 2 hours (extracted text)
+    document_storage_dir: str = "./data/documents"
+    document_file_ttl_days: int = 7  # original bytes on disk
 
     @property
     def escalate_department_list(self) -> List[str]:

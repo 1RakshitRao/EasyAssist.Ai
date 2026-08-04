@@ -2,6 +2,8 @@ const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => [...document.querySelectorAll(sel)];
 
 const AUTH_KEY = "ampcus_helpdesk_auth";
+const CHAT_SESSION_KEY = "ampcus_chat_session_id";
+const CHAT_SESSION_OWNER_KEY = "ampcus_chat_session_owner";
 
 function formatApiError(err, fallback) {
   const detail = err?.detail;
@@ -51,6 +53,12 @@ function logout(message) {
   closeNotifyPanel();
   closeAccountMenu?.();
   clearAuth();
+  try {
+    localStorage.removeItem(CHAT_SESSION_KEY);
+    localStorage.removeItem(CHAT_SESSION_OWNER_KEY);
+  } catch {
+    /* ignore */
+  }
   clearChatUi?.();
   showLogin(message);
 }
@@ -460,6 +468,7 @@ async function enterApp() {
   if (login) login.hidden = true;
   if (shell) shell.hidden = false;
   document.body.classList.remove("is-login");
+  ensureSessionOwnedByCurrentUser();
   applyRoleGates();
   initSidebarToggle();
   initHeaderChrome();
@@ -1336,12 +1345,13 @@ function clearChatUi() {
   const meta = $("#chat-meta");
   if (meta) meta.hidden = true;
   closeCheckpointPanel();
+  closeDocSidePanel?.();
   removeDocOptionCards?.();
+  _activeDocMeta = null;
   _docAskMode = false;
+  setDocComposerPlaceholder?.(false);
   refreshCheckpoints();
 }
-
-const CHAT_SESSION_KEY = "ampcus_chat_session_id";
 
 function makeSessionId() {
   if (crypto?.randomUUID) return `sess_${crypto.randomUUID().replace(/-/g, "")}`;
@@ -1360,7 +1370,27 @@ function getActiveSessionId() {
 function setActiveSessionId(id) {
   const sid = (id || "").trim() || makeSessionId();
   localStorage.setItem(CHAT_SESSION_KEY, sid);
+  const email = (getAuth()?.user?.email || "").trim().toLowerCase();
+  if (email) localStorage.setItem(CHAT_SESSION_OWNER_KEY, email);
   return sid;
+}
+
+function isStaleSessionError(err) {
+  return /session belongs to another user/i.test(String(err?.message || err || ""));
+}
+
+/** If local session was created under a different login, start a fresh chat. */
+function ensureSessionOwnedByCurrentUser() {
+  const email = (getAuth()?.user?.email || "").trim().toLowerCase();
+  if (!email) return;
+  const owner = (localStorage.getItem(CHAT_SESSION_OWNER_KEY) || "").trim().toLowerCase();
+  if (owner && owner !== email) {
+    setActiveSessionId(makeSessionId());
+    clearChatUi?.();
+  } else {
+    localStorage.setItem(CHAT_SESSION_OWNER_KEY, email);
+    getActiveSessionId();
+  }
 }
 
 const CHAT_META_KEY = "ampcus_chat_session_meta";
@@ -1501,15 +1531,59 @@ async function openChatSession(sessionId) {
   setSessionFlag(sessionId, "unread", false);
   switchView("chat");
   clearChatUi();
+  let activeDoc = null;
+  try {
+    const docRes = await api(
+      `/documents/active?session_id=${encodeURIComponent(sessionId)}`
+    );
+    if (docRes.ok) {
+      activeDoc = await docRes.json();
+      if (activeDoc) rememberActiveDoc({ ...activeDoc, session_id: sessionId });
+    }
+  } catch {
+    activeDoc = null;
+  }
   try {
     const res = await api(`/sessions/${encodeURIComponent(sessionId)}/messages`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const messages = await res.json();
     if (messages.length) {
       enterChatActive();
+      let showedOptions = false;
       for (const m of messages) {
+        const content = m.content || "";
+        if (m.role === "user" && content.startsWith("Uploaded document:")) {
+          const fname = content.replace(/^Uploaded document:\s*/, "").trim() || activeDoc?.filename;
+          addDocAttachBubble({
+            ...(activeDoc || {}),
+            filename: fname || activeDoc?.filename || "document",
+            session_id: sessionId,
+            doc_id: activeDoc?.doc_id,
+          });
+          continue;
+        }
+        if (
+          m.role === "assistant" &&
+          content.startsWith("I've read your document") &&
+          activeDoc &&
+          !showedOptions
+        ) {
+          renderDocOptionsCard({ ...activeDoc, session_id: sessionId });
+          showedOptions = true;
+          continue;
+        }
+        if (
+          m.role === "assistant" &&
+          content.includes("Choose an option below") &&
+          activeDoc &&
+          !showedOptions
+        ) {
+          renderDocOptionsCard({ ...activeDoc, session_id: sessionId });
+          showedOptions = true;
+          continue;
+        }
         const role = m.role === "assistant" ? "bot" : "user";
-        addBubble(role, m.content || "");
+        addBubble(role, content);
       }
     }
   } catch (err) {
@@ -1793,9 +1867,6 @@ async function ask(question) {
   );
   const thinking = $("#chat-messages").lastElementChild;
 
-  const isStaleSessionError = (err) =>
-    /session belongs to another user/i.test(String(err?.message || err || ""));
-
   try {
     if (nlpMode) {
       let data;
@@ -1900,70 +1971,449 @@ $("#chat-attach")?.addEventListener("click", () => {
 let _docAskMode = false;
 let _docSuggestedDept = "hr";
 let _docBusy = false;
+let _activeDocMeta = null;
+
+const DOC_OP_ICONS = {
+  summarize:
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h10M4 18h14"/></svg>',
+  takeaways:
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+  actions:
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+  explain:
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18h6M10 22h4M12 2a7 7 0 0 0-4 12c.6.6 1 1.4 1 2.2V17h6v-.8c0-.8.4-1.6 1-2.2A7 7 0 0 0 12 2z"/></svg>',
+  risks:
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>',
+  ask:
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a4 4 0 0 1-4 4H7l-4 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z"/></svg>',
+  push_to_kb:
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>',
+};
+
+function formatFileSize(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n < 0) return "";
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function fileExtLabel(filename) {
+  const ext = String(filename || "").split(".").pop() || "file";
+  return ext.toUpperCase().slice(0, 4);
+}
+
+function fileExtKey(filename) {
+  return String(filename || "").split(".").pop()?.toLowerCase() || "file";
+}
+
+function setDocComposerPlaceholder(active) {
+  const input = $("#chat-input");
+  if (!input) return;
+  if (_docAskMode) {
+    input.placeholder = "Ask a question about the uploaded document…";
+  } else if (active) {
+    input.placeholder = "Ask about the document or type a question…";
+  } else {
+    input.placeholder = "How can I help you today?";
+  }
+}
+
+function rememberActiveDoc(data) {
+  if (!data?.doc_id) {
+    _activeDocMeta = null;
+    setDocComposerPlaceholder(false);
+    return;
+  }
+  _activeDocMeta = {
+    doc_id: data.doc_id,
+    session_id: data.session_id || getActiveSessionId(),
+    filename: data.filename || "document",
+    preview_kind: data.preview_kind || "",
+    char_count: data.char_count || 0,
+    file_size_bytes: data.file_size_bytes ?? null,
+    page_count: data.page_count ?? null,
+    available_options: data.available_options || [],
+    suggested_department: data.suggested_department || "hr",
+    created_at: data.created_at || null,
+  };
+  _docSuggestedDept = _activeDocMeta.suggested_department || "hr";
+  setDocComposerPlaceholder(true);
+}
 
 function removeDocOptionCards() {
-  $$(".doc-options-card, .doc-chip").forEach((el) => el.remove());
+  $$(".doc-options-card").forEach((el) => el.remove());
+}
+
+function makeDocOptionButton(op) {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "doc-option-btn";
+  const icon = DOC_OP_ICONS[op.id] || DOC_OP_ICONS.ask;
+  btn.innerHTML = `${icon}<span>${escapeHtml(op.label || op.id)}</span>`;
+  btn.title = op.description || op.label || "";
+  btn.dataset.op = op.id;
+  btn.dataset.needsQuestion = op.needs_question ? "1" : "0";
+  return btn;
 }
 
 function renderDocOptionsCard(data) {
   removeDocOptionCards();
   const msgs = $("#chat-messages");
   if (!msgs) return;
-
-  const chip = document.createElement("div");
-  chip.className = "doc-chip";
-  chip.textContent = `Document: ${data.filename || "file"}`;
-  msgs.appendChild(chip);
+  rememberActiveDoc(data);
 
   const card = document.createElement("div");
   card.className = "doc-options-card";
-  const opts = data.available_options || [];
+  card.dataset.docId = data.doc_id || "";
+  card.dataset.sessionId = data.session_id || getActiveSessionId();
   card.innerHTML = `
-    <h4>What would you like to do?</h4>
-    <p>Operations run only on this uploaded document (not the knowledge base).</p>
+    <h4>I've read your document. Here are the things I can do with it:</h4>
+    <p>Nothing is sent to the model until you pick an action.</p>
     <div class="doc-options-grid"></div>
   `;
   const grid = card.querySelector(".doc-options-grid");
-  for (const op of opts) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "doc-option-btn";
-    btn.textContent = op.label;
-    btn.title = op.description || op.label;
-    btn.dataset.op = op.id;
-    btn.dataset.needsQuestion = op.needs_question ? "1" : "0";
-    grid.appendChild(btn);
+  for (const op of data.available_options || []) {
+    grid.appendChild(makeDocOptionButton(op));
   }
   msgs.appendChild(card);
   msgs.scrollTo({ top: msgs.scrollHeight, behavior: "smooth" });
-  _docSuggestedDept = data.suggested_department || "hr";
+}
+
+function docFileIconSvg(ext) {
+  const kind = String(ext || "").toLowerCase();
+  if (kind === "pdf") {
+    return `<svg class="doc-file-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <path fill="#e2556f" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+      <path fill="#fff" d="M14 2v6h6"/>
+      <path fill="#fff" d="M8.2 17.2h1.1l.55-1.55h1.9l.55 1.55H14l-2.05-5.1h-1.7L8.2 17.2zm2.05-2.45.7-1.95.7 1.95h-1.4z"/>
+    </svg>`;
+  }
+  if (kind === "docx" || kind === "doc") {
+    return `<svg class="doc-file-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <path fill="#2b6cb0" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+      <path fill="#fff" d="M14 2v6h6"/>
+      <path fill="#fff" d="M8 12h8v1.2H8V12zm0 2.4h8v1.2H8v-1.2zm0 2.4h5v1.2H8v-1.2z"/>
+    </svg>`;
+  }
+  return `<svg class="doc-file-icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+    <path fill="#5a6570" d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6z"/>
+    <path fill="#fff" d="M14 2v6h6"/>
+    <path fill="#fff" d="M8 12h8v1.2H8V12zm0 2.4h8v1.2H8v-1.2zm0 2.4h5v1.2H8v-1.2z"/>
+  </svg>`;
+}
+
+function addDocAttachBubble(meta, { pending = false } = {}) {
+  const msgs = $("#chat-messages");
+  if (!msgs) return null;
+  const el = document.createElement("div");
+  el.className = "bubble user bubble-doc";
+  el.dataset.checkpointId = `cp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+  const filename = meta.filename || "document";
+  const ext = fileExtKey(filename);
+  const size = formatFileSize(meta.file_size_bytes ?? meta.size);
+  const sub = pending
+    ? `${size || fileExtLabel(filename)} · Uploading…`
+    : `${[size, "Click to preview"].filter(Boolean).join(" · ")}`;
+  el.innerHTML = `
+    <button type="button" class="doc-attach-chip" data-doc-chip ${pending ? "disabled" : ""}>
+      <span class="doc-file-badge" data-ext="${escapeHtml(ext)}">${docFileIconSvg(ext)}</span>
+      <span class="doc-attach-meta">
+        <span class="doc-attach-name">${escapeHtml(filename)}</span>
+        <span class="doc-attach-sub">${escapeHtml(sub)}</span>
+      </span>
+      <span class="doc-attach-chevron" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 6l6 6-6 6"/></svg>
+      </span>
+    </button>
+  `;
+  const chip = el.querySelector("[data-doc-chip]");
+  if (chip && !pending) {
+    chip.dataset.docId = meta.doc_id || "";
+    chip.dataset.sessionId = meta.session_id || getActiveSessionId();
+    chip.dataset.filename = filename;
+    chip.dataset.previewKind = meta.preview_kind || "";
+    chip.dataset.charCount = String(meta.char_count || 0);
+    if (meta.file_size_bytes != null) chip.dataset.fileSize = String(meta.file_size_bytes);
+    if (meta.page_count != null) chip.dataset.pageCount = String(meta.page_count);
+  }
+  msgs.appendChild(el);
+  msgs.scrollTo({ top: msgs.scrollHeight, behavior: "smooth" });
+  refreshCheckpoints();
+  return el;
+}
+
+let _docSideBlobUrl = null;
+
+function revokeDocSideBlob() {
+  if (_docSideBlobUrl) {
+    URL.revokeObjectURL(_docSideBlobUrl);
+    _docSideBlobUrl = null;
+  }
+}
+
+function closeDocSidePanel() {
+  const panel = $("#doc-side-panel");
+  const view = $("#view-chat");
+  if (panel) {
+    panel.hidden = true;
+    panel.classList.remove("is-wide");
+  }
+  view?.classList.remove("doc-panel-open");
+  document.body.classList.remove("doc-panel-resizing");
+  revokeDocSideBlob();
+  const body = $("#doc-side-body");
+  if (body) {
+    body.classList.remove("has-text");
+    body.innerHTML = `<p class="doc-side-placeholder">Upload a document to preview it here.</p>`;
+  }
+}
+
+const DOC_PANEL_WIDTH_KEY = "ampcus_doc_panel_width";
+const DOC_PANEL_MIN = 320;
+const DOC_PANEL_DEFAULT = 420;
+
+function getDocPanelMaxWidth() {
+  return Math.max(DOC_PANEL_MIN + 40, Math.floor(window.innerWidth * 0.72));
+}
+
+function getSavedDocPanelWidth() {
+  const raw = Number(localStorage.getItem(DOC_PANEL_WIDTH_KEY) || DOC_PANEL_DEFAULT);
+  if (!Number.isFinite(raw)) return DOC_PANEL_DEFAULT;
+  return raw;
+}
+
+function applyDocPanelWidth(px, { persist = true } = {}) {
+  const max = getDocPanelMaxWidth();
+  const w = Math.max(DOC_PANEL_MIN, Math.min(max, Math.round(px)));
+  document.documentElement.style.setProperty("--doc-panel-width", `${w}px`);
+  const panel = $("#doc-side-panel");
+  if (panel) panel.classList.toggle("is-wide", w >= Math.floor(window.innerWidth * 0.55));
+  const expandBtn = $("#doc-side-expand");
+  if (expandBtn) {
+    const wide = panel?.classList.contains("is-wide");
+    expandBtn.title = wide ? "Narrow preview" : "Widen preview";
+    expandBtn.setAttribute("aria-label", wide ? "Narrow preview" : "Widen preview");
+  }
+  if (persist) localStorage.setItem(DOC_PANEL_WIDTH_KEY, String(w));
+  return w;
+}
+
+function initDocPanelResize() {
+  const handle = $("#doc-side-resize");
+  if (!handle || handle.dataset.bound === "1") return;
+  handle.dataset.bound = "1";
+  let dragging = false;
+
+  const onMove = (e) => {
+    if (!dragging) return;
+    if (e.cancelable) e.preventDefault();
+    const x = e.touches?.[0]?.clientX ?? e.clientX;
+    applyDocPanelWidth(window.innerWidth - x);
+  };
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove("is-dragging");
+    document.body.classList.remove("doc-panel-resizing");
+    window.removeEventListener("mousemove", onMove);
+    window.removeEventListener("mouseup", onUp);
+    window.removeEventListener("touchmove", onMove);
+    window.removeEventListener("touchend", onUp);
+  };
+
+  const onDown = (e) => {
+    e.preventDefault();
+    dragging = true;
+    handle.classList.add("is-dragging");
+    document.body.classList.add("doc-panel-resizing");
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onUp);
+  };
+
+  handle.addEventListener("mousedown", onDown);
+  handle.addEventListener("touchstart", onDown, { passive: false });
+
+  $("#doc-side-expand")?.addEventListener("click", () => {
+    const wideTarget = Math.floor(window.innerWidth * 0.62);
+    const current = getSavedDocPanelWidth();
+    if (current >= Math.floor(window.innerWidth * 0.55)) {
+      applyDocPanelWidth(DOC_PANEL_DEFAULT);
+    } else {
+      applyDocPanelWidth(wideTarget);
+    }
+  });
+
+  window.addEventListener("resize", () => {
+    if ($("#view-chat")?.classList.contains("doc-panel-open")) {
+      applyDocPanelWidth(getSavedDocPanelWidth(), { persist: false });
+    }
+  });
+}
+
+function renderDocSideStats(meta) {
+  const stats = $("#doc-side-stats");
+  if (!stats) return;
+  const rows = [];
+  if (meta.page_count != null) {
+    rows.push(`<div><dt>Pages</dt><dd>${Number(meta.page_count).toLocaleString()}</dd></div>`);
+  }
+  if (meta.char_count != null) {
+    rows.push(`<div><dt>Characters</dt><dd>${Number(meta.char_count || 0).toLocaleString()}</dd></div>`);
+  }
+  rows.push(`<div><dt>Uploaded</dt><dd>just now</dd></div>`);
+  stats.innerHTML = rows.join("");
+}
+
+async function renderNativeDocPreview(meta, body) {
+  const sid = meta.session_id || getActiveSessionId();
+  const docId = meta.doc_id;
+  const kind = String(meta.preview_kind || fileExtKey(meta.filename || "")).toLowerCase();
+  const previewKind =
+    kind === "pdf" || kind === "html" || kind === "text"
+      ? kind
+      : fileExtKey(meta.filename || "") === "pdf"
+        ? "pdf"
+        : fileExtKey(meta.filename || "") === "docx"
+          ? "html"
+          : "text";
+
+  const res = await api(
+    `/documents/preview?session_id=${encodeURIComponent(sid)}&doc_id=${encodeURIComponent(docId)}`
+  );
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(formatApiError(err, `Preview failed (${res.status})`));
+  }
+
+  body.classList.remove("has-text");
+  revokeDocSideBlob();
+
+  if (previewKind === "html") {
+    const html = await res.text();
+    body.innerHTML = `<iframe class="doc-side-frame" title="Document preview" sandbox="allow-same-origin"></iframe>`;
+    const frame = body.querySelector("iframe");
+    if (frame) frame.srcdoc = html;
+    return;
+  }
+
+  if (previewKind === "text") {
+    const text = await res.text();
+    body.classList.add("has-text");
+    body.textContent = text;
+    return;
+  }
+
+  const blob = await res.blob();
+  _docSideBlobUrl = URL.createObjectURL(blob);
+  body.innerHTML = `<iframe class="doc-side-frame" title="Document preview" src="${_docSideBlobUrl}"></iframe>`;
+}
+
+async function openDocSidePanel(meta) {
+  const panel = $("#doc-side-panel");
+  const view = $("#view-chat");
+  if (!panel || !meta?.doc_id) return;
+  rememberActiveDoc({ ...(_activeDocMeta || {}), ...meta });
+  applyDocPanelWidth(getSavedDocPanelWidth(), { persist: false });
+  initDocPanelResize();
+  panel.hidden = false;
+  view?.classList.add("doc-panel-open");
+
+  const filename = meta.filename || "document";
+  const ext = fileExtKey(filename);
+  const badge = $("#doc-side-badge");
+  if (badge) {
+    badge.textContent = fileExtLabel(filename);
+    badge.dataset.ext = ext;
+  }
+  const nameEl = $("#doc-side-name");
+  if (nameEl) nameEl.textContent = filename;
+  const subEl = $("#doc-side-sub");
+  if (subEl) {
+    const size = formatFileSize(meta.file_size_bytes);
+    subEl.textContent = [fileExtLabel(filename), size].filter(Boolean).join(" · ");
+  }
+  renderDocSideStats(meta);
+
+  const body = $("#doc-side-body");
+  if (body) {
+    body.classList.remove("has-text");
+    body.innerHTML = `<p class="doc-side-placeholder">Loading preview…</p>`;
+  }
+  try {
+    const sid = meta.session_id || getActiveSessionId();
+    // Refresh meta (size, char count) without using extracted text for display
+    try {
+      const metaRes = await api(`/documents/active?session_id=${encodeURIComponent(sid)}`);
+      if (metaRes.ok) {
+        const data = await metaRes.json();
+        if (data) {
+          rememberActiveDoc({ ...meta, ...data, session_id: sid });
+          meta = { ...meta, ...data, session_id: sid };
+          renderDocSideStats({
+            ...meta,
+            page_count: meta.page_count ?? data.page_count,
+            file_size_bytes: data.file_size_bytes ?? meta.file_size_bytes,
+          });
+        }
+      }
+    } catch {
+      /* preview can still proceed with chip meta */
+    }
+    if (body) await renderNativeDocPreview(meta, body);
+  } catch (err) {
+    if (body) {
+      body.classList.remove("has-text");
+      body.innerHTML = `<p class="doc-side-error">${escapeHtml(err.message || "Failed to load")}</p>`;
+    }
+  }
 }
 
 async function uploadChatDocument(file) {
   if (!file || _docBusy) return;
   _docBusy = true;
   enterChatActive();
-  addBubble("user", `Uploaded document: ${file.name}`);
+  ensureSessionOwnedByCurrentUser();
+  const pendingBubble = addDocAttachBubble(
+    { filename: file.name, file_size_bytes: file.size },
+    { pending: true }
+  );
   addBubble("bot", "Reading document…");
   const thinking = $("#chat-messages").lastElementChild;
   try {
-    const body = new FormData();
-    body.append("file", file);
-    body.append("session_id", getActiveSessionId());
-    const res = await api("/documents/upload", { method: "POST", body });
-    const errBody = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      throw new Error(formatApiError(errBody, `Upload failed (${res.status})`));
+    const postUpload = async (sessionId) => {
+      const body = new FormData();
+      body.append("file", file);
+      body.append("session_id", sessionId);
+      const res = await api("/documents/upload", { method: "POST", body });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(formatApiError(payload, `Upload failed (${res.status})`));
+      }
+      return payload;
+    };
+
+    let errBody;
+    try {
+      errBody = await postUpload(getActiveSessionId());
+    } catch (err) {
+      if (!isStaleSessionError(err)) throw err;
+      setActiveSessionId(makeSessionId());
+      errBody = await postUpload(getActiveSessionId());
     }
     if (errBody.session_id) setActiveSessionId(errBody.session_id);
+    pendingBubble?.remove();
     thinking.remove();
-    addBubble(
-      "bot",
-      `I've loaded ${errBody.filename} (${Number(errBody.char_count || 0).toLocaleString()} characters). Choose an option below, or ask a question about this document.`
-    );
+    addDocAttachBubble({
+      ...errBody,
+      file_size_bytes: errBody.file_size_bytes ?? file.size,
+    });
     renderDocOptionsCard(errBody);
     loadSessionList();
   } catch (err) {
+    pendingBubble?.remove();
     thinking?.remove();
     addBubble("bot", `Error: ${err.message}`, true);
   } finally {
@@ -2056,14 +2506,7 @@ async function confirmDocKbPush() {
   }
 }
 
-$("#chat-file-input")?.addEventListener("change", (e) => {
-  const file = e.target?.files?.[0];
-  if (file) uploadChatDocument(file);
-});
-
-$("#chat-messages")?.addEventListener("click", (e) => {
-  const btn = e.target?.closest?.(".doc-option-btn");
-  if (!btn || btn.disabled) return;
+function handleDocOptionClick(btn) {
   const op = btn.dataset.op;
   if (!op) return;
   if (op === "push_to_kb") {
@@ -2072,15 +2515,39 @@ $("#chat-messages")?.addEventListener("click", (e) => {
   }
   if (op === "ask" || btn.dataset.needsQuestion === "1") {
     _docAskMode = true;
-    const input = $("#chat-input");
-    if (input) {
-      input.placeholder = "Ask a question about the uploaded document…";
-      input.focus();
-    }
+    setDocComposerPlaceholder(true);
+    $("#chat-input")?.focus();
     return;
   }
   runDocumentAnalyze(op);
+}
+
+$("#chat-file-input")?.addEventListener("change", (e) => {
+  const file = e.target?.files?.[0];
+  if (file) uploadChatDocument(file);
 });
+
+$("#chat-messages")?.addEventListener("click", (e) => {
+  const chip = e.target?.closest?.("[data-doc-chip]");
+  if (chip && !chip.disabled) {
+    openDocSidePanel({
+      doc_id: chip.dataset.docId,
+      session_id: chip.dataset.sessionId || getActiveSessionId(),
+      filename: chip.dataset.filename,
+      preview_kind: chip.dataset.previewKind,
+      char_count: Number(chip.dataset.charCount || 0),
+      file_size_bytes: chip.dataset.fileSize ? Number(chip.dataset.fileSize) : null,
+      page_count: chip.dataset.pageCount ? Number(chip.dataset.pageCount) : null,
+      available_options: _activeDocMeta?.available_options || [],
+    });
+    return;
+  }
+  const btn = e.target?.closest?.(".doc-option-btn");
+  if (!btn || btn.disabled) return;
+  handleDocOptionClick(btn);
+});
+
+$("#doc-side-close")?.addEventListener("click", closeDocSidePanel);
 
 $("#doc-kb-cancel")?.addEventListener("click", closeDocKbModal);
 $("#doc-kb-backdrop")?.addEventListener("click", closeDocKbModal);

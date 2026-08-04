@@ -136,9 +136,13 @@ CREATE TABLE IF NOT EXISTS chat_documents (
     filename TEXT NOT NULL,
     content_type TEXT,
     char_count INTEGER DEFAULT 0,
-    text TEXT NOT NULL,
+    text TEXT,
     created_at TEXT NOT NULL,
-    expires_at TEXT NOT NULL
+    expires_at TEXT NOT NULL,
+    stored_path TEXT,
+    preview_kind TEXT,
+    text_expires_at TEXT,
+    file_expires_at TEXT
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_documents_session
@@ -172,6 +176,75 @@ def init_audit_db() -> None:
         path = audit_db_path()
         with connect() as conn:
             conn.executescript(_SCHEMA)
+            _migrate_chat_documents(conn)
             conn.commit()
         _initialized = True
         logger.info("Audit SQLite ready path=%s", path)
+
+
+def _migrate_chat_documents(conn: sqlite3.Connection) -> None:
+    info = conn.execute("PRAGMA table_info(chat_documents)").fetchall()
+    if not info:
+        return
+    cols = {r[1] for r in info}
+    alter = []
+    if "stored_path" not in cols:
+        alter.append("ALTER TABLE chat_documents ADD COLUMN stored_path TEXT")
+    if "preview_kind" not in cols:
+        alter.append("ALTER TABLE chat_documents ADD COLUMN preview_kind TEXT")
+    if "text_expires_at" not in cols:
+        alter.append("ALTER TABLE chat_documents ADD COLUMN text_expires_at TEXT")
+    if "file_expires_at" not in cols:
+        alter.append("ALTER TABLE chat_documents ADD COLUMN file_expires_at TEXT")
+    for sql in alter:
+        conn.execute(sql)
+
+    # Older builds had text TEXT NOT NULL; dual-TTL purge needs nullable text.
+    text_notnull = next((int(r[3]) for r in info if r[1] == "text"), 0)
+    if text_notnull:
+        conn.executescript(
+            """
+            CREATE TABLE chat_documents_new (
+                doc_id TEXT PRIMARY KEY,
+                session_id TEXT NOT NULL,
+                user_email TEXT NOT NULL,
+                filename TEXT NOT NULL,
+                content_type TEXT,
+                char_count INTEGER DEFAULT 0,
+                text TEXT,
+                created_at TEXT NOT NULL,
+                expires_at TEXT NOT NULL,
+                stored_path TEXT,
+                preview_kind TEXT,
+                text_expires_at TEXT,
+                file_expires_at TEXT
+            );
+            INSERT INTO chat_documents_new (
+                doc_id, session_id, user_email, filename, content_type,
+                char_count, text, created_at, expires_at,
+                stored_path, preview_kind, text_expires_at, file_expires_at
+            )
+            SELECT
+                doc_id, session_id, user_email, filename, content_type,
+                char_count, text, created_at, expires_at,
+                stored_path, preview_kind, text_expires_at, file_expires_at
+            FROM chat_documents;
+            DROP TABLE chat_documents;
+            ALTER TABLE chat_documents_new RENAME TO chat_documents;
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_documents_session
+            ON chat_documents(session_id);
+            CREATE INDEX IF NOT EXISTS idx_chat_documents_expires
+            ON chat_documents(expires_at);
+            CREATE INDEX IF NOT EXISTS idx_chat_documents_file_expires
+            ON chat_documents(file_expires_at);
+            """
+        )
+        logger.info("Migrated chat_documents.text to nullable for dual TTL")
+
+    # Index after columns exist (CREATE INDEX in _SCHEMA would fail on older DBs)
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_chat_documents_file_expires
+        ON chat_documents(file_expires_at)
+        """
+    )

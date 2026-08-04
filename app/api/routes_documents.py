@@ -1,10 +1,12 @@
-"""Chat document upload / analyze / KB push API."""
+"""Chat document upload / analyze / KB push / preview API."""
 
 from __future__ import annotations
 
 import logging
+import uuid
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse, HTMLResponse, Response
 
 from app.audit.cost import costs_for_query
 from app.audit.store import append_event
@@ -16,11 +18,25 @@ from app.documents.cleaner import clean_text
 from app.documents.extractor import (
     EmptyDocumentError,
     UnsupportedDocumentType,
+    count_pages,
     extract_text,
 )
 from app.documents.kb_pusher import push_to_kb, suggest_department
 from app.documents.options import get_options, is_allowed_operation
-from app.documents.session_store import get_active_document, upsert_document
+from app.documents.preview import ensure_docx_preview_html, preview_kind
+from app.documents.session_store import (
+    clear_document,
+    document_owner_email,
+    get_active_document,
+    get_document_for_preview,
+    upsert_document,
+)
+from app.documents.storage import (
+    absolute_path,
+    cleanup_old_document_files,
+    file_relative_path,
+    save_file,
+)
 from app.models.schemas import (
     DocumentActiveResponse,
     DocumentAnalyzeRequest,
@@ -95,6 +111,11 @@ async def upload_document(
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
+    try:
+        cleanup_old_document_files()
+    except Exception:
+        logger.warning("document file cleanup failed", exc_info=True)
+
     data = await file.read()
     max_bytes = int(settings.document_max_bytes or 10_485_760)
     if len(data) > max_bytes:
@@ -103,15 +124,24 @@ async def upload_document(
             detail=f"File too large (max {max_bytes // (1024 * 1024)}MB)",
         )
     filename = file.filename or "document.txt"
+    doc_id = str(uuid.uuid4())
+    kind = preview_kind(filename)
+    size_bytes = len(data)
+    pages = count_pages(data, filename)
     try:
         raw = extract_text(data, filename)
         cleaned = clean_text(raw)
+        save_file(sid, doc_id, filename, data)
+        rel = file_relative_path(sid, doc_id, filename)
         meta = upsert_document(
             session_id=sid,
             user_email=email,
             filename=filename,
             text=cleaned,
             content_type=file.content_type,
+            stored_path=rel,
+            preview_kind_value=kind,
+            doc_id=doc_id,
         )
     except UnsupportedDocumentType as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -131,7 +161,6 @@ async def upload_document(
         except Exception:
             suggested = "hr"
 
-    # Persist a short chat note
     try:
         save_message(
             session_id=sid,
@@ -145,8 +174,7 @@ async def upload_document(
             user_email=email,
             role="assistant",
             content=(
-                f"I've loaded {filename} ({meta['char_count']:,} characters). "
-                "Choose an option below, or ask a question about this document."
+                "I've read your document. Here are the things I can do with it:"
             ),
             department="document",
         )
@@ -160,29 +188,112 @@ async def upload_document(
         session_id=sid,
         available_options=options,
         suggested_department=suggested,
+        preview_kind=kind,
+        file_size_bytes=size_bytes,
+        page_count=pages,
     )
 
 
 @router.get("/documents/active", response_model=DocumentActiveResponse | None)
-def active_document(user: CurrentUser, session_id: str) -> DocumentActiveResponse | None:
+def active_document(
+    user: CurrentUser,
+    session_id: str,
+    include_text: bool = False,
+) -> DocumentActiveResponse | None:
     email = str(user.get("email") or "")
-    doc = get_active_document(session_id, email, include_text=False)
+    doc = get_active_document(session_id, email, include_text=include_text)
     if not doc:
         return None
     suggested = None
     if str(user.get("role") or "").lower() == "admin":
-        full = get_active_document(session_id, email, include_text=True)
+        full = doc if include_text and doc.get("text") else get_active_document(
+            session_id, email, include_text=True
+        )
         if full and full.get("text"):
             suggested = suggest_department(str(full["text"]), str(full.get("filename") or ""))
+    size_bytes = None
+    stored = doc.get("stored_path")
+    if stored:
+        try:
+            path = absolute_path(str(stored))
+            if path.is_file():
+                size_bytes = path.stat().st_size
+        except Exception:
+            size_bytes = None
     return DocumentActiveResponse(
         doc_id=str(doc["doc_id"]),
         filename=str(doc["filename"]),
         char_count=int(doc["char_count"] or 0),
         created_at=str(doc["created_at"]),
-        expires_at=str(doc["expires_at"]),
+        expires_at=str(doc.get("file_expires_at") or doc["expires_at"]),
         available_options=_options_for(user),
         suggested_department=suggested,
+        preview_kind=doc.get("preview_kind"),
+        file_size_bytes=size_bytes,
+        text=str(doc["text"]) if include_text and doc.get("text") else None,
+        text_expired=bool(doc.get("text_expired")) if include_text else False,
     )
+
+
+@router.get("/documents/preview")
+def preview_document(
+    user: CurrentUser,
+    session_id: str,
+    doc_id: str,
+) -> Response:
+    email = str(user.get("email") or "")
+    meta = get_document_for_preview(session_id, doc_id, email)
+    if not meta:
+        owner = document_owner_email(session_id, doc_id)
+        if owner and owner != (email or "").strip().lower():
+            raise HTTPException(status_code=403, detail="Not allowed to preview this document")
+        raise HTTPException(status_code=404, detail="Document not found")
+    stored = meta.get("stored_path")
+    if not stored:
+        raise HTTPException(status_code=404, detail="Original file not available")
+    try:
+        path = absolute_path(str(stored))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="File missing on disk")
+
+    kind = (meta.get("preview_kind") or preview_kind(str(meta.get("filename") or ""))).lower()
+    fname = str(meta.get("filename") or path.name)
+    if kind == "html":
+        try:
+            html_path = ensure_docx_preview_html(path)
+        except Exception as exc:
+            logger.exception("docx preview convert failed")
+            raise HTTPException(status_code=500, detail=f"Preview failed: {exc}") from exc
+        return HTMLResponse(
+            content=html_path.read_text(encoding="utf-8"),
+            headers={"Cache-Control": "private, max-age=60"},
+        )
+    if kind == "pdf":
+        return FileResponse(
+            path,
+            media_type="application/pdf",
+            filename=fname,
+            content_disposition_type="inline",
+            headers={"Cache-Control": "private, max-age=60"},
+        )
+    return FileResponse(
+        path,
+        media_type="text/plain; charset=utf-8",
+        filename=fname,
+        content_disposition_type="inline",
+        headers={"Cache-Control": "private, max-age=60"},
+    )
+
+
+@router.delete("/documents/active")
+def delete_active_document(user: CurrentUser, session_id: str) -> dict:
+    email = str(user.get("email") or "")
+    ok = clear_document(session_id, email)
+    if not ok:
+        raise HTTPException(status_code=404, detail="No document to clear")
+    return {"status": "ok"}
 
 
 @router.post("/documents/analyze", response_model=DocumentAnalyzeResponse)
@@ -204,10 +315,15 @@ def analyze(req: DocumentAnalyzeRequest, user: CurrentUser) -> DocumentAnalyzeRe
         raise HTTPException(status_code=403, detail=str(exc)) from exc
 
     doc = get_active_document(sid, email, include_text=True)
-    if not doc or not doc.get("text"):
+    if not doc:
         raise HTTPException(
             status_code=404,
             detail="No active document for this session. Upload a file first.",
+        )
+    if not doc.get("text"):
+        raise HTTPException(
+            status_code=404,
+            detail="Document text has expired. Re-upload the file to analyze it.",
         )
 
     try:

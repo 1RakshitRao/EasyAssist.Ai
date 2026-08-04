@@ -224,6 +224,9 @@ class DocumentUploadResponse(BaseModel):
     session_id: str
     available_options: List[DocumentOption] = Field(default_factory=list)
     suggested_department: Optional[str] = None
+    preview_kind: Optional[str] = None
+    file_size_bytes: Optional[int] = None
+    page_count: Optional[int] = None
 
 
 class DocumentAnalyzeRequest(BaseModel):
@@ -264,3 +267,8 @@ class DocumentActiveResponse(BaseModel):
     expires_at: str
     available_options: List[DocumentOption] = Field(default_factory=list)
     suggested_department: Optional[str] = None
+    preview_kind: Optional[str] = None
+    file_size_bytes: Optional[int] = None
+    page_count: Optional[int] = None
+    text: Optional[str] = None
+    text_expired: bool = False
