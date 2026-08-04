@@ -128,6 +128,24 @@ CREATE TABLE IF NOT EXISTS nlp_query_logs (
 
 CREATE INDEX IF NOT EXISTS idx_nlp_query_logs_ts
 ON nlp_query_logs(timestamp DESC);
+
+CREATE TABLE IF NOT EXISTS chat_documents (
+    doc_id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL,
+    user_email TEXT NOT NULL,
+    filename TEXT NOT NULL,
+    content_type TEXT,
+    char_count INTEGER DEFAULT 0,
+    text TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chat_documents_session
+ON chat_documents(session_id);
+
+CREATE INDEX IF NOT EXISTS idx_chat_documents_expires
+ON chat_documents(expires_at);
 """
 
 

@@ -1636,6 +1636,116 @@ body.is-login {
   border-radius: 14px;
   padding: 12px 14px;
 }
+.doc-options-card {
+  align-self: flex-start;
+  max-width: min(560px, 96%);
+  margin: 4px 0 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--line, #e6e1ef);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: var(--shadow);
+}
+.doc-options-card h4 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+}
+.doc-options-card p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.doc-options-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.doc-option-btn {
+  border: 1px solid var(--line, #e6e1ef);
+  background: #f7f7f5;
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 8px 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.doc-option-btn:hover {
+  border-color: var(--violet, #6c4dff);
+  color: var(--violet-deep, #4b2fd6);
+}
+.doc-option-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.doc-kb-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.doc-kb-modal[hidden] {
+  display: none !important;
+}
+.doc-kb-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 18, 16, 0.45);
+}
+.doc-kb-dialog {
+  position: relative;
+  z-index: 1;
+  width: min(420px, 100%);
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 18px 48px rgba(40, 30, 20, 0.2);
+  padding: 18px;
+}
+.doc-kb-dialog h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+.doc-kb-dialog p {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.doc-kb-dialog label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.doc-kb-dialog select {
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  font: inherit;
+  margin-bottom: 14px;
+}
+.doc-kb-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.doc-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 8px 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--violet-soft, #ece7ff);
+  color: var(--violet-deep, #4b2fd6);
+  font-size: 12px;
+  font-weight: 600;
+}
 .bubble.checkpoint-flash {
   outline: 2px solid rgba(108, 77, 255, 0.35);
   outline-offset: 3px;
