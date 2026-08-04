@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/styles.css?v=claude15" />
+  <link rel="stylesheet" href="/static/styles.css?v=claude16" />
 </head>
 <body class="is-login">
   <div id="login-screen" class="login-screen">
@@ -365,6 +365,7 @@
                       <path d="M12 5v14M5 12h14"/>
                     </svg>
                   </button>
+                  <input type="file" id="chat-file-input" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" hidden />
                   <div class="composer-mode" id="chat-mode-wrap" role="group" aria-label="Answer source">
                     <button type="button" class="composer-mode-btn" data-mode="kb" id="chat-mode-kb" aria-pressed="true">Chat</button>
                     <button type="button" class="composer-mode-btn" data-mode="nlp" id="chat-mode-nlp" aria-pressed="false">Company data</button>
@@ -418,6 +419,25 @@
           </aside>
         </div>
       </section>
+
+      <div class="doc-kb-modal" id="doc-kb-modal" hidden>
+        <div class="doc-kb-backdrop" id="doc-kb-backdrop"></div>
+        <div class="doc-kb-dialog" role="dialog" aria-labelledby="doc-kb-title">
+          <h3 id="doc-kb-title">Add document to knowledge base</h3>
+          <p id="doc-kb-blurb">Choose the department collection for this document.</p>
+          <label for="doc-kb-dept">Department</label>
+          <select id="doc-kb-dept">
+            <option value="hr">HR</option>
+            <option value="it">IT</option>
+            <option value="compliance">Compliance</option>
+            <option value="legal">Legal</option>
+          </select>
+          <div class="doc-kb-actions">
+            <button type="button" class="chip" id="doc-kb-cancel">Cancel</button>
+            <button type="button" class="chip" id="doc-kb-confirm">Add to KB</button>
+          </div>
+        </div>
+      </div>
 
       <!-- KNOWLEDGE BASE -->
       <section id="view-kb" class="view">
@@ -783,6 +803,6 @@
       </button>
     </div>
   </div>
-  <script src="/static/app.js?v=claude13"></script>
+  <script src="/static/app.js?v=claude14"></script>
 </body>
 </html>

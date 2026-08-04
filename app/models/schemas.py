@@ -207,3 +207,60 @@ class CompanyFactOut(BaseModel):
     detail_2: Optional[str] = None
     active: int = 1
     created_at: str
+
+
+class DocumentOption(BaseModel):
+    id: str
+    label: str
+    description: str = ""
+    needs_question: bool = False
+    admin_only: bool = False
+
+
+class DocumentUploadResponse(BaseModel):
+    doc_id: str
+    filename: str
+    char_count: int
+    session_id: str
+    available_options: List[DocumentOption] = Field(default_factory=list)
+    suggested_department: Optional[str] = None
+
+
+class DocumentAnalyzeRequest(BaseModel):
+    session_id: str = Field(..., min_length=1)
+    operation: str = Field(..., min_length=1)
+    question: Optional[str] = None
+
+
+class DocumentAnalyzeResponse(BaseModel):
+    operation: str
+    result: str
+    doc_id: str
+    filename: str
+    model_used: str = ""
+    token_usage: Dict[str, int] = Field(default_factory=dict)
+    cost_usd: float = 0.0
+    session_id: Optional[str] = None
+
+
+class DocumentPushRequest(BaseModel):
+    session_id: str = Field(..., min_length=1)
+    department: str = Field(..., description="hr | it | compliance | legal")
+    title: Optional[str] = None
+
+
+class DocumentPushResponse(BaseModel):
+    chunks_created: int
+    department: str
+    doc_ids: List[str] = Field(default_factory=list)
+    filename: str = ""
+
+
+class DocumentActiveResponse(BaseModel):
+    doc_id: str
+    filename: str
+    char_count: int
+    created_at: str
+    expires_at: str
+    available_options: List[DocumentOption] = Field(default_factory=list)
+    suggested_department: Optional[str] = None

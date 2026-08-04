@@ -15,6 +15,7 @@ from app.agents.board_monitor import run_board_monitor_once
 from app.analytics.stats import reset_stats
 from app.api.routes_admin_insights import router as admin_insights_router
 from app.api.routes_auth import router as auth_router
+from app.api.routes_documents import router as documents_router
 from app.api.routes_health import router as health_router
 from app.api.routes_ingest import router as ingest_router
 from app.api.routes_kb import router as kb_router
@@ -99,6 +100,7 @@ app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(query_router)
 app.include_router(nlp_query_router)
+app.include_router(documents_router)
 app.include_router(sessions_router)
 app.include_router(ingest_router)
 app.include_router(kb_router)

@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     price_opus_input_per_mtok: float = 15.0
     price_opus_output_per_mtok: float = 75.0
 
+    # Chat document assistant
+    document_max_bytes: int = 10_485_760  # 10MB
+    document_ttl_seconds: int = 7200  # 2 hours
+
     @property
     def escalate_department_list(self) -> List[str]:
         return [d.strip().lower() for d in self.escalate_departments.split(",") if d.strip()]

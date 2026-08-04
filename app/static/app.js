@@ -1336,6 +1336,8 @@ function clearChatUi() {
   const meta = $("#chat-meta");
   if (meta) meta.hidden = true;
   closeCheckpointPanel();
+  removeDocOptionCards?.();
+  _docAskMode = false;
   refreshCheckpoints();
 }
 
@@ -1766,6 +1768,15 @@ function initChatModelSelect() {
 async function ask(question) {
   const q = question.trim();
   if (!q || _askInFlight) return;
+
+  if (_docAskMode) {
+    _docAskMode = false;
+    const input = $("#chat-input");
+    if (input) input.placeholder = "How can I help you today?";
+    await runDocumentAnalyze("ask", q);
+    return;
+  }
+
   _askInFlight = true;
   enterChatActive();
   addBubble("user", q);
@@ -1883,8 +1894,198 @@ initChatSessions();
 initChatCheckpoints();
 
 $("#chat-attach")?.addEventListener("click", () => {
-  alert("Attachments are not enabled in this MVP.");
+  $("#chat-file-input")?.click();
 });
+
+let _docAskMode = false;
+let _docSuggestedDept = "hr";
+let _docBusy = false;
+
+function removeDocOptionCards() {
+  $$(".doc-options-card, .doc-chip").forEach((el) => el.remove());
+}
+
+function renderDocOptionsCard(data) {
+  removeDocOptionCards();
+  const msgs = $("#chat-messages");
+  if (!msgs) return;
+
+  const chip = document.createElement("div");
+  chip.className = "doc-chip";
+  chip.textContent = `Document: ${data.filename || "file"}`;
+  msgs.appendChild(chip);
+
+  const card = document.createElement("div");
+  card.className = "doc-options-card";
+  const opts = data.available_options || [];
+  card.innerHTML = `
+    <h4>What would you like to do?</h4>
+    <p>Operations run only on this uploaded document (not the knowledge base).</p>
+    <div class="doc-options-grid"></div>
+  `;
+  const grid = card.querySelector(".doc-options-grid");
+  for (const op of opts) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "doc-option-btn";
+    btn.textContent = op.label;
+    btn.title = op.description || op.label;
+    btn.dataset.op = op.id;
+    btn.dataset.needsQuestion = op.needs_question ? "1" : "0";
+    grid.appendChild(btn);
+  }
+  msgs.appendChild(card);
+  msgs.scrollTo({ top: msgs.scrollHeight, behavior: "smooth" });
+  _docSuggestedDept = data.suggested_department || "hr";
+}
+
+async function uploadChatDocument(file) {
+  if (!file || _docBusy) return;
+  _docBusy = true;
+  enterChatActive();
+  addBubble("user", `Uploaded document: ${file.name}`);
+  addBubble("bot", "Reading document…");
+  const thinking = $("#chat-messages").lastElementChild;
+  try {
+    const body = new FormData();
+    body.append("file", file);
+    body.append("session_id", getActiveSessionId());
+    const res = await api("/documents/upload", { method: "POST", body });
+    const errBody = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(formatApiError(errBody, `Upload failed (${res.status})`));
+    }
+    if (errBody.session_id) setActiveSessionId(errBody.session_id);
+    thinking.remove();
+    addBubble(
+      "bot",
+      `I've loaded ${errBody.filename} (${Number(errBody.char_count || 0).toLocaleString()} characters). Choose an option below, or ask a question about this document.`
+    );
+    renderDocOptionsCard(errBody);
+    loadSessionList();
+  } catch (err) {
+    thinking?.remove();
+    addBubble("bot", `Error: ${err.message}`, true);
+  } finally {
+    _docBusy = false;
+    const input = $("#chat-file-input");
+    if (input) input.value = "";
+  }
+}
+
+async function runDocumentAnalyze(operation, question = null) {
+  if (_docBusy) return;
+  _docBusy = true;
+  enterChatActive();
+  const label =
+    operation === "ask" && question
+      ? question
+      : `Document: ${String(operation || "").replace(/_/g, " ")}`;
+  addBubble("user", label);
+  addBubble("bot", "Analyzing document…");
+  const thinking = $("#chat-messages").lastElementChild;
+  try {
+    const res = await api("/documents/analyze", {
+      method: "POST",
+      body: JSON.stringify({
+        session_id: getActiveSessionId(),
+        operation,
+        question: question || undefined,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(formatApiError(data, `Analyze failed (${res.status})`));
+    }
+    thinking.remove();
+    addBubble("bot", data.result || "(empty result)");
+    loadSessionList();
+  } catch (err) {
+    thinking?.remove();
+    addBubble("bot", `Error: ${err.message}`, true);
+  } finally {
+    _docBusy = false;
+    $("#chat-input")?.focus();
+  }
+}
+
+function openDocKbModal() {
+  const modal = $("#doc-kb-modal");
+  const select = $("#doc-kb-dept");
+  if (select) select.value = _docSuggestedDept || "hr";
+  if (modal) modal.hidden = false;
+}
+
+function closeDocKbModal() {
+  const modal = $("#doc-kb-modal");
+  if (modal) modal.hidden = true;
+}
+
+async function confirmDocKbPush() {
+  if (_docBusy) return;
+  const dept = $("#doc-kb-dept")?.value || "hr";
+  closeDocKbModal();
+  _docBusy = true;
+  enterChatActive();
+  addBubble("user", `Add to KB (${dept})`);
+  addBubble("bot", "Adding document to the knowledge base…");
+  const thinking = $("#chat-messages").lastElementChild;
+  try {
+    const res = await api("/documents/push-to-kb", {
+      method: "POST",
+      body: JSON.stringify({
+        session_id: getActiveSessionId(),
+        department: dept,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      throw new Error(formatApiError(data, `KB push failed (${res.status})`));
+    }
+    thinking.remove();
+    addBubble(
+      "bot",
+      `Added ${data.filename || "document"} to the ${data.department} knowledge base (${data.chunks_created} chunk(s)).`
+    );
+    loadSessionList();
+  } catch (err) {
+    thinking?.remove();
+    addBubble("bot", `Error: ${err.message}`, true);
+  } finally {
+    _docBusy = false;
+  }
+}
+
+$("#chat-file-input")?.addEventListener("change", (e) => {
+  const file = e.target?.files?.[0];
+  if (file) uploadChatDocument(file);
+});
+
+$("#chat-messages")?.addEventListener("click", (e) => {
+  const btn = e.target?.closest?.(".doc-option-btn");
+  if (!btn || btn.disabled) return;
+  const op = btn.dataset.op;
+  if (!op) return;
+  if (op === "push_to_kb") {
+    openDocKbModal();
+    return;
+  }
+  if (op === "ask" || btn.dataset.needsQuestion === "1") {
+    _docAskMode = true;
+    const input = $("#chat-input");
+    if (input) {
+      input.placeholder = "Ask a question about the uploaded document…";
+      input.focus();
+    }
+    return;
+  }
+  runDocumentAnalyze(op);
+});
+
+$("#doc-kb-cancel")?.addEventListener("click", closeDocKbModal);
+$("#doc-kb-backdrop")?.addEventListener("click", closeDocKbModal);
+$("#doc-kb-confirm")?.addEventListener("click", confirmDocKbPush);
+
 $("#chat-mic")?.addEventListener("click", () => {
   alert("Voice input is not enabled in this MVP.");
 });
