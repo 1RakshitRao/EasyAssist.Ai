@@ -79,7 +79,22 @@ def extract_text(data: bytes, filename: str) -> str:
         raw = extract_docx(data)
     else:
         raw = extract_txt(data)
-
     if not (raw or "").strip():
-        raise EmptyDocumentError("No extractable text found in the document")
+        raise EmptyDocumentError("No extractable text found in document")
     return raw
+
+
+def count_pages(data: bytes, filename: str) -> int | None:
+    """Return page count for PDFs; None for other types."""
+    if _ext(filename) != ".pdf" or not data:
+        return None
+    try:
+        import fitz
+    except ImportError:
+        return None
+    try:
+        with fitz.open(stream=data, filetype="pdf") as doc:
+            return int(doc.page_count)
+    except Exception:
+        logger.debug("pdf page count failed", exc_info=True)
+        return None

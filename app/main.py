@@ -69,6 +69,12 @@ async def lifespan(_app: FastAPI):
     init_audit_db()
     seed_company_facts_if_empty()
     try:
+        from app.documents.storage import cleanup_old_document_files
+
+        cleanup_old_document_files()
+    except Exception:
+        logger.warning("document storage cleanup failed on startup", exc_info=True)
+    try:
         sync_app_users()
     except Exception:
         logger.warning("app_users sync failed on startup", exc_info=True)

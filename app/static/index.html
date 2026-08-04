@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/styles.css?v=claude16" />
+  <link rel="stylesheet" href="/static/styles.css?v=claude29" />
 </head>
 <body class="is-login">
   <div id="login-screen" class="login-screen">
@@ -331,95 +331,122 @@
 
       <!-- CHAT (home) -->
       <section id="view-chat" class="view active chat-view chat-home">
-        <div class="chat-stage">
-          <div class="chat-home-hero" id="chat-home-hero">
-            <h1 class="chat-greeting">
-              <span class="chat-spark" aria-hidden="true"></span>
-              Hello, Ampcus <span id="chat-user-role">employee</span>!
-            </h1>
-          </div>
-
-          <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
-
-          <div class="chat-checkpoints" id="chat-checkpoints" hidden>
-            <button type="button" class="chat-checkpoint-rail" id="chat-checkpoint-rail" title="Jump to a message" aria-label="Open chat checkpoints" aria-expanded="false" aria-controls="chat-checkpoint-panel">
-              <!-- ticks filled by JS -->
-            </button>
-            <div class="chat-checkpoint-panel" id="chat-checkpoint-panel" hidden role="dialog" aria-label="Chat checkpoints">
-              <ul class="chat-checkpoint-list" id="chat-checkpoint-list"></ul>
+        <div class="chat-shell">
+          <div class="chat-stage">
+            <div class="chat-home-hero" id="chat-home-hero">
+              <h1 class="chat-greeting">
+                <span class="chat-spark" aria-hidden="true"></span>
+                Hello, Ampcus <span id="chat-user-role">employee</span>!
+              </h1>
             </div>
-          </div>
 
-          <div class="composer-wrap">
-            <form id="chat-form" class="composer" autocomplete="off">
-              <textarea
-                id="chat-input"
-                rows="2"
-                placeholder="How can I help you today?"
-                required
-              ></textarea>
-              <div class="composer-toolbar">
-                <div class="composer-toolbar-left">
-                  <button type="button" class="icon-btn" title="Attach" aria-label="Attach" id="chat-attach">
-                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M12 5v14M5 12h14"/>
-                    </svg>
-                  </button>
-                  <input type="file" id="chat-file-input" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" hidden />
-                  <div class="composer-mode" id="chat-mode-wrap" role="group" aria-label="Answer source">
-                    <button type="button" class="composer-mode-btn" data-mode="kb" id="chat-mode-kb" aria-pressed="true">Chat</button>
-                    <button type="button" class="composer-mode-btn" data-mode="nlp" id="chat-mode-nlp" aria-pressed="false">Company data</button>
+            <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
+
+            <div class="chat-checkpoints" id="chat-checkpoints" hidden>
+              <button type="button" class="chat-checkpoint-rail" id="chat-checkpoint-rail" title="Jump to a message" aria-label="Open chat checkpoints" aria-expanded="false" aria-controls="chat-checkpoint-panel">
+                <!-- ticks filled by JS -->
+              </button>
+              <div class="chat-checkpoint-panel" id="chat-checkpoint-panel" hidden role="dialog" aria-label="Chat checkpoints">
+                <ul class="chat-checkpoint-list" id="chat-checkpoint-list"></ul>
+              </div>
+            </div>
+
+            <div class="composer-wrap">
+              <form id="chat-form" class="composer" autocomplete="off">
+                <textarea
+                  id="chat-input"
+                  rows="2"
+                  placeholder="How can I help you today?"
+                  required
+                ></textarea>
+                <div class="composer-toolbar">
+                  <div class="composer-toolbar-left">
+                    <button type="button" class="icon-btn" title="Attach" aria-label="Attach" id="chat-attach">
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 5v14M5 12h14"/>
+                      </svg>
+                    </button>
+                    <input type="file" id="chat-file-input" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" hidden />
+                    <div class="composer-mode" id="chat-mode-wrap" role="group" aria-label="Answer source">
+                      <button type="button" class="composer-mode-btn" data-mode="kb" id="chat-mode-kb" aria-pressed="true">Chat</button>
+                      <button type="button" class="composer-mode-btn" data-mode="nlp" id="chat-mode-nlp" aria-pressed="false">Company data</button>
+                    </div>
+                  </div>
+                  <div class="composer-toolbar-right">
+                    <div class="composer-model" id="chat-model-wrap">
+                      <button type="button" class="composer-model-btn" id="chat-model-btn" aria-haspopup="listbox" aria-expanded="false" aria-label="Choose answer model">
+                        <span class="model-name" id="chat-model-name">Auto</span>
+                        <span class="model-effort" id="chat-model-effort">Auto</span>
+                        <svg class="model-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+                      </button>
+                      <ul class="composer-model-menu" id="chat-model-menu" role="listbox" hidden>
+                        <li role="option" data-value="auto" data-name="Auto" data-effort="Auto">Auto <span>Auto</span></li>
+                        <li role="option" data-value="routine" data-name="Haiku" data-effort="Low">Haiku <span>Low</span></li>
+                        <li role="option" data-value="high" data-name="Sonnet" data-effort="Medium">Sonnet <span>Medium</span></li>
+                        <li role="option" data-value="opus" data-name="Opus" data-effort="High">Opus <span>High</span></li>
+                      </ul>
+                      <input type="hidden" id="chat-model" value="auto" />
+                    </div>
+                    <button type="button" class="icon-btn" title="Voice" aria-label="Voice" id="chat-mic">
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="9" y="2" width="6" height="11" rx="3"/>
+                        <path d="M5 10a7 7 0 0 0 14 0M12 17v4M8 21h8"/>
+                      </svg>
+                    </button>
+                    <button type="button" class="icon-btn" title="Voice mode" aria-label="Voice mode" id="chat-wave">
+                      <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                        <rect x="3" y="9" width="2.5" height="6" rx="1"/>
+                        <rect x="8" y="6" width="2.5" height="12" rx="1"/>
+                        <rect x="13" y="4" width="2.5" height="16" rx="1"/>
+                        <rect x="18" y="8" width="2.5" height="8" rx="1"/>
+                      </svg>
+                    </button>
                   </div>
                 </div>
-                <div class="composer-toolbar-right">
-                  <div class="composer-model" id="chat-model-wrap">
-                    <button type="button" class="composer-model-btn" id="chat-model-btn" aria-haspopup="listbox" aria-expanded="false" aria-label="Choose answer model">
-                      <span class="model-name" id="chat-model-name">Auto</span>
-                      <span class="model-effort" id="chat-model-effort">Auto</span>
-                      <svg class="model-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
-                    </button>
-                    <ul class="composer-model-menu" id="chat-model-menu" role="listbox" hidden>
-                      <li role="option" data-value="auto" data-name="Auto" data-effort="Auto">Auto <span>Auto</span></li>
-                      <li role="option" data-value="routine" data-name="Haiku" data-effort="Low">Haiku <span>Low</span></li>
-                      <li role="option" data-value="high" data-name="Sonnet" data-effort="Medium">Sonnet <span>Medium</span></li>
-                      <li role="option" data-value="opus" data-name="Opus" data-effort="High">Opus <span>High</span></li>
-                    </ul>
-                    <input type="hidden" id="chat-model" value="auto" />
-                  </div>
-                  <button type="button" class="icon-btn" title="Voice" aria-label="Voice" id="chat-mic">
-                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2">
-                      <rect x="9" y="2" width="6" height="11" rx="3"/>
-                      <path d="M5 10a7 7 0 0 0 14 0M12 17v4M8 21h8"/>
-                    </svg>
-                  </button>
-                  <button type="button" class="icon-btn" title="Voice mode" aria-label="Voice mode" id="chat-wave">
-                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                      <rect x="3" y="9" width="2.5" height="6" rx="1"/>
-                      <rect x="8" y="6" width="2.5" height="12" rx="1"/>
-                      <rect x="13" y="4" width="2.5" height="16" rx="1"/>
-                      <rect x="18" y="8" width="2.5" height="8" rx="1"/>
-                    </svg>
-                  </button>
+              </form>
+            </div>
+
+            <aside class="chat-meta" id="chat-meta" hidden>
+              <div class="chat-meta-inner">
+                <span><b>Dept</b> <i id="meta-dept">—</i></span>
+                <span><b>Severity</b> <i id="meta-sev">—</i></span>
+                <span><b>Cached</b> <i id="meta-cached">—</i></span>
+                <span><b>Sim</b> <i id="meta-sim">—</i></span>
+                <span><b>Escalated</b> <i id="meta-esc">—</i></span>
+                <span><b>Ticket</b> <i id="meta-ticket">—</i></span>
+                <span class="meta-wide"><b>Sources</b> <i id="meta-sources">—</i></span>
+                <span class="meta-wide"><b>Model</b> <i id="meta-model">—</i></span>
+              </div>
+            </aside>
+          </div>
+
+          <aside class="doc-side-panel" id="doc-side-panel" hidden aria-label="Document preview">
+            <div class="doc-side-resize" id="doc-side-resize" title="Drag to resize" role="separator" aria-orientation="vertical" aria-label="Resize preview panel"></div>
+            <div class="doc-side-top">
+              <button type="button" class="doc-side-close" id="doc-side-close" aria-label="Close document panel">×</button>
+              <button type="button" class="doc-side-expand" id="doc-side-expand" aria-label="Widen preview" title="Widen preview">
+                <svg viewBox="0 0 24 24" width="17" height="12" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M8 12H3M3 12l3-3M3 12l3 3M16 12h5M21 12l-3-3M21 12l-3 3"/>
+                </svg>
+              </button>
+              <div class="doc-side-file">
+                <span class="doc-file-badge" id="doc-side-badge">PDF</span>
+                <div class="doc-side-file-meta">
+                  <strong id="doc-side-name">Document</strong>
+                  <p id="doc-side-sub">—</p>
                 </div>
               </div>
-            </form>
-          </div>
-
-          <aside class="chat-meta" id="chat-meta" hidden>
-            <div class="chat-meta-inner">
-              <span><b>Dept</b> <i id="meta-dept">—</i></span>
-              <span><b>Severity</b> <i id="meta-sev">—</i></span>
-              <span><b>Cached</b> <i id="meta-cached">—</i></span>
-              <span><b>Sim</b> <i id="meta-sim">—</i></span>
-              <span><b>Escalated</b> <i id="meta-esc">—</i></span>
-              <span><b>Ticket</b> <i id="meta-ticket">—</i></span>
-              <span class="meta-wide"><b>Sources</b> <i id="meta-sources">—</i></span>
-              <span class="meta-wide"><b>Model</b> <i id="meta-model">—</i></span>
+              <dl class="doc-side-stats" id="doc-side-stats"></dl>
+            </div>
+            <div class="doc-side-section doc-side-preview-wrap">
+              <h5>Preview</h5>
+              <div class="doc-side-body" id="doc-side-body">
+                <p class="doc-side-placeholder">Upload a document to preview it here.</p>
+              </div>
             </div>
           </aside>
         </div>
       </section>
-
       <div class="doc-kb-modal" id="doc-kb-modal" hidden>
         <div class="doc-kb-backdrop" id="doc-kb-backdrop"></div>
         <div class="doc-kb-dialog" role="dialog" aria-labelledby="doc-kb-title">
@@ -803,6 +830,6 @@
       </button>
     </div>
   </div>
-  <script src="/static/app.js?v=claude14"></script>
+  <script src="/static/app.js?v=claude21"></script>
 </body>
 </html>
