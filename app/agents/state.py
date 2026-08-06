@@ -30,3 +30,22 @@ class HelpdeskState(TypedDict, total=False):
     model_preference: Optional[str]  # auto | routine | high | opus
     session_id: Optional[str]
     conversation_history: List[Dict[str, str]]  # prior turns for answer agent
+    # Supervisor routing
+    intent: str
+    intent_confidence: str
+    intent_reason: str
+    document_operation: Optional[str]
+    user_role: str
+    joining_date: Optional[str]
+    document_id: Optional[str]
+    has_document: bool
+    onboarding_active: bool
+    has_prior: bool
+    cache_similarity: Optional[float]
+    nlp_allowed: Optional[bool]
+    block_kind: Optional[str]
+    include_welcome: bool
+    pending_ticket_confirmation: bool
+    pending_ticket_payload: Optional[Dict[str, Any]]
+    kb_miss_query: Optional[str]
+    reservation_calendar: Optional[Dict[str, Any]]

@@ -28,8 +28,13 @@ class NotificationResponse(BaseModel):
     severity: Optional[str] = None
     department: Optional[str] = None
     created_by_email: Optional[str] = None
+    reservation_id: Optional[str] = None
+    confirmation_number: Optional[str] = None
+    employee_email: Optional[str] = None
     created_at: str
     read_at: Optional[str] = None
+
+    model_config = {"extra": "ignore"}
 
 
 class UnreadCountResponse(BaseModel):

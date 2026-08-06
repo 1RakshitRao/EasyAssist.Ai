@@ -59,7 +59,9 @@ CREATE TABLE IF NOT EXISTS chat_sessions (
     user_email TEXT NOT NULL,
     title TEXT NOT NULL,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    pending_ticket_json TEXT,
+    pending_reservation_json TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_chat_sessions_email_updated
@@ -150,6 +152,145 @@ ON chat_documents(session_id);
 
 CREATE INDEX IF NOT EXISTS idx_chat_documents_expires
 ON chat_documents(expires_at);
+
+CREATE TABLE IF NOT EXISTS employees (
+    email TEXT PRIMARY KEY,
+    full_name TEXT NOT NULL,
+    employee_id TEXT UNIQUE,
+    department TEXT NOT NULL,
+    role_title TEXT NOT NULL,
+    manager_email TEXT,
+    office_location TEXT,
+    joining_date TEXT NOT NULL,
+    onboarding_complete INTEGER DEFAULT 0,
+    onboarding_started_at TEXT,
+    created_by TEXT,
+    created_at TEXT NOT NULL,
+    active INTEGER DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_employees_joining_complete
+ON employees(joining_date, onboarding_complete);
+
+CREATE TABLE IF NOT EXISTS onboarding_tasks (
+    id TEXT PRIMARY KEY,
+    employee_email TEXT NOT NULL,
+    task_key TEXT NOT NULL,
+    task_title TEXT NOT NULL,
+    task_description TEXT,
+    category TEXT NOT NULL,
+    status TEXT DEFAULT 'pending',
+    due_date TEXT,
+    completed_at TEXT,
+    reminder_count INTEGER DEFAULT 0,
+    last_reminded_at TEXT,
+    link_url TEXT,
+    department_specific INTEGER DEFAULT 0,
+    sort_order INTEGER DEFAULT 0,
+    FOREIGN KEY (employee_email) REFERENCES employees(email),
+    UNIQUE (employee_email, task_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_onboarding_tasks_email_status
+ON onboarding_tasks(employee_email, status);
+
+CREATE INDEX IF NOT EXISTS idx_onboarding_tasks_email_category
+ON onboarding_tasks(employee_email, category, sort_order);
+
+CREATE TABLE IF NOT EXISTS onboarding_reminders (
+    id TEXT PRIMARY KEY,
+    employee_email TEXT NOT NULL,
+    task_id TEXT,
+    reminder_type TEXT NOT NULL,
+    sent_at TEXT NOT NULL,
+    delivery_status TEXT DEFAULT 'sent',
+    channel TEXT DEFAULT 'email',
+    FOREIGN KEY (employee_email) REFERENCES employees(email)
+);
+
+CREATE INDEX IF NOT EXISTS idx_onboarding_reminders_email_sent
+ON onboarding_reminders(employee_email, sent_at DESC);
+
+CREATE TABLE IF NOT EXISTS guesthouses (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL UNIQUE,
+    address     TEXT NOT NULL,
+    city        TEXT NOT NULL DEFAULT 'Bloomington',
+    amenities   TEXT DEFAULT '[]',
+    photos_json TEXT DEFAULT '[]',
+    active      INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS rooms (
+    id             TEXT PRIMARY KEY,
+    guesthouse_id  TEXT NOT NULL REFERENCES guesthouses(id),
+    room_number    TEXT NOT NULL,
+    room_name      TEXT NOT NULL,
+    capacity       INTEGER NOT NULL DEFAULT 2,
+    amenities      TEXT DEFAULT '[]',
+    active         INTEGER NOT NULL DEFAULT 1,
+    UNIQUE(guesthouse_id, room_number)
+);
+
+CREATE TABLE IF NOT EXISTS availability (
+    id              TEXT PRIMARY KEY,
+    room_id         TEXT NOT NULL REFERENCES rooms(id),
+    date            TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'available',
+    reservation_id  TEXT,
+    source          TEXT DEFAULT 'system',
+    uploaded_by     TEXT,
+    created_at      TEXT NOT NULL,
+    UNIQUE(room_id, date)
+);
+
+CREATE TABLE IF NOT EXISTS reservations (
+    id                   TEXT PRIMARY KEY,
+    confirmation_number  TEXT NOT NULL UNIQUE,
+    employee_email       TEXT NOT NULL,
+    room_id              TEXT NOT NULL REFERENCES rooms(id),
+    guesthouse_id        TEXT NOT NULL REFERENCES guesthouses(id),
+    checkin_date         TEXT NOT NULL,
+    checkout_date        TEXT NOT NULL,
+    purpose              TEXT NOT NULL,
+    status               TEXT NOT NULL DEFAULT 'pending_approval',
+    created_at           TEXT NOT NULL,
+    approved_at          TEXT,
+    approved_by          TEXT,
+    rejected_at          TEXT,
+    rejected_by          TEXT,
+    rejection_reason     TEXT,
+    cancelled_at         TEXT,
+    cancelled_by         TEXT,
+    override_at          TEXT,
+    override_by          TEXT,
+    override_reason      TEXT,
+    last_modified_at     TEXT,
+    modification_count   INTEGER DEFAULT 0,
+    auto_approve_at      TEXT,
+    notified_48h         INTEGER DEFAULT 0,
+    notified_checkin     INTEGER DEFAULT 0,
+    notified_checkout    INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS reservation_audit (
+    id               TEXT PRIMARY KEY,
+    reservation_id   TEXT NOT NULL REFERENCES reservations(id),
+    action           TEXT NOT NULL,
+    performed_by     TEXT NOT NULL,
+    reason           TEXT,
+    previous_status  TEXT,
+    new_status       TEXT,
+    previous_dates   TEXT,
+    timestamp        TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_avail_room_date ON availability(room_id, date);
+CREATE INDEX IF NOT EXISTS idx_reservations_employee ON reservations(employee_email);
+CREATE INDEX IF NOT EXISTS idx_reservations_status ON reservations(status);
+CREATE INDEX IF NOT EXISTS idx_reservations_dates ON reservations(checkin_date, checkout_date);
+CREATE INDEX IF NOT EXISTS idx_audit_reservation ON reservation_audit(reservation_id);
 """
 
 
@@ -177,6 +318,7 @@ def init_audit_db() -> None:
         with connect() as conn:
             conn.executescript(_SCHEMA)
             _migrate_chat_documents(conn)
+            _migrate_chat_sessions(conn)
             conn.commit()
         _initialized = True
         logger.info("Audit SQLite ready path=%s", path)
@@ -248,3 +390,20 @@ def _migrate_chat_documents(conn: sqlite3.Connection) -> None:
         ON chat_documents(file_expires_at)
         """
     )
+
+
+def _migrate_chat_sessions(conn: sqlite3.Connection) -> None:
+    info = conn.execute("PRAGMA table_info(chat_sessions)").fetchall()
+    if not info:
+        return
+    cols = {r[1] for r in info}
+    if "pending_ticket_json" not in cols:
+        conn.execute(
+            "ALTER TABLE chat_sessions ADD COLUMN pending_ticket_json TEXT"
+        )
+        logger.info("Added chat_sessions.pending_ticket_json column")
+    if "pending_reservation_json" not in cols:
+        conn.execute(
+            "ALTER TABLE chat_sessions ADD COLUMN pending_reservation_json TEXT"
+        )
+        logger.info("Added chat_sessions.pending_reservation_json column")

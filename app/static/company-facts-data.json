@@ -1,0 +1,747 @@
+{
+  "categories": [
+    "clients",
+    "services",
+    "locations",
+    "products",
+    "team",
+    "partnerships"
+  ],
+  "facts": [
+    {
+      "category": "clients",
+      "name": "Acme Corporation",
+      "description": "Manufacturing enterprise client in North America",
+      "detail_1": "Tier Enterprise \u00b7 12,000 employees \u00b7 since 2019",
+      "detail_2": "SOC2 \u00b7 revenue $10M+ \u00b7 longest running enterprise client",
+      "active": true,
+      "attributes": {
+        "industry": "Manufacturing",
+        "tier": "Enterprise",
+        "region": "North America",
+        "employee_count": 12000,
+        "since_year": 2019,
+        "compliance_tags": "SOC2",
+        "sensitivity": "Standard",
+        "revenue_band": "$10M+",
+        "status": "active",
+        "notes": "Longest running enterprise client"
+      }
+    },
+    {
+      "category": "clients",
+      "name": "Global Tech Partners",
+      "description": "Financial services strategic client in North America",
+      "detail_1": "Tier Strategic \u00b7 4,500 employees \u00b7 since 2021",
+      "detail_2": "SOC2,PCI \u00b7 High sensitivity \u00b7 expanding to EMEA in Q3",
+      "active": true,
+      "attributes": {
+        "industry": "Financial Services",
+        "tier": "Strategic",
+        "region": "North America",
+        "employee_count": 4500,
+        "since_year": 2021,
+        "compliance_tags": "SOC2,PCI",
+        "sensitivity": "High",
+        "revenue_band": "$5M-$10M",
+        "status": "active",
+        "notes": "Expanding to EMEA in Q3"
+      }
+    },
+    {
+      "category": "clients",
+      "name": "Meridian Group",
+      "description": "Healthcare enterprise client requiring compliance-sensitive handling",
+      "detail_1": "Tier Enterprise \u00b7 8,200 employees \u00b7 since 2020",
+      "detail_2": "SOC2,HIPAA \u00b7 quarterly compliance review required",
+      "active": true,
+      "attributes": {
+        "industry": "Healthcare",
+        "tier": "Enterprise",
+        "region": "North America",
+        "employee_count": 8200,
+        "since_year": 2020,
+        "compliance_tags": "SOC2,HIPAA",
+        "sensitivity": "Compliance-sensitive",
+        "revenue_band": "$10M+",
+        "status": "active",
+        "notes": "Requires quarterly compliance review"
+      }
+    },
+    {
+      "category": "clients",
+      "name": "Vertex Solutions",
+      "description": "EMEA technology SaaS client on a standard tier",
+      "detail_1": "Tier Standard \u00b7 900 employees \u00b7 since 2022 \u00b7 region EMEA",
+      "detail_2": "GDPR \u00b7 revenue $1M-$5M \u00b7 fast growing SaaS startup",
+      "active": true,
+      "attributes": {
+        "industry": "Technology",
+        "tier": "Standard",
+        "region": "EMEA",
+        "employee_count": 900,
+        "since_year": 2022,
+        "compliance_tags": "GDPR",
+        "sensitivity": "Standard",
+        "revenue_band": "$1M-$5M",
+        "status": "active",
+        "notes": "Fast growing SaaS startup"
+      }
+    },
+    {
+      "category": "clients",
+      "name": "Bluewater Capital",
+      "description": "Finance strategic client and Ampcus's oldest account",
+      "detail_1": "Tier Strategic \u00b7 2,200 employees \u00b7 since 2018",
+      "detail_2": "SOC2,PCI,SEC \u00b7 High sensitivity \u00b7 renewal due Q4",
+      "active": true,
+      "attributes": {
+        "industry": "Finance",
+        "tier": "Strategic",
+        "region": "North America",
+        "employee_count": 2200,
+        "since_year": 2018,
+        "compliance_tags": "SOC2,PCI,SEC",
+        "sensitivity": "High",
+        "revenue_band": "$5M-$10M",
+        "status": "active",
+        "notes": "Oldest client \u2014 renewal due Q4"
+      }
+    },
+    {
+      "category": "clients",
+      "name": "Apex Retail Group",
+      "description": "APAC retail client currently in onboarding",
+      "detail_1": "Tier Standard \u00b7 3,100 employees \u00b7 since 2023 \u00b7 region APAC",
+      "detail_2": "PCI \u00b7 revenue $1M-$5M \u00b7 new client onboarding phase",
+      "active": true,
+      "attributes": {
+        "industry": "Retail",
+        "tier": "Standard",
+        "region": "APAC",
+        "employee_count": 3100,
+        "since_year": 2023,
+        "compliance_tags": "PCI",
+        "sensitivity": "Standard",
+        "revenue_band": "$1M-$5M",
+        "status": "active",
+        "notes": "New client \u2014 onboarding phase"
+      }
+    },
+    {
+      "category": "clients",
+      "name": "Northstar Insurance",
+      "description": "Insurance enterprise client with multiple compliance frameworks",
+      "detail_1": "Tier Enterprise \u00b7 6,700 employees \u00b7 since 2020",
+      "detail_2": "SOC2,HIPAA,SEC \u00b7 Compliance-sensitive \u00b7 revenue $10M+",
+      "active": true,
+      "attributes": {
+        "industry": "Insurance",
+        "tier": "Enterprise",
+        "region": "North America",
+        "employee_count": 6700,
+        "since_year": 2020,
+        "compliance_tags": "SOC2,HIPAA,SEC",
+        "sensitivity": "Compliance-sensitive",
+        "revenue_band": "$10M+",
+        "status": "active",
+        "notes": "Three compliance frameworks active"
+      }
+    },
+    {
+      "category": "clients",
+      "name": "Orion Energy",
+      "description": "EMEA energy client focused on renewables",
+      "detail_1": "Tier Standard \u00b7 1,800 employees \u00b7 since 2022 \u00b7 region EMEA",
+      "detail_2": "GDPR,ISO27001 \u00b7 revenue $1M-$5M \u00b7 renewable energy focus",
+      "active": true,
+      "attributes": {
+        "industry": "Energy",
+        "tier": "Standard",
+        "region": "EMEA",
+        "employee_count": 1800,
+        "since_year": 2022,
+        "compliance_tags": "GDPR,ISO27001",
+        "sensitivity": "Standard",
+        "revenue_band": "$1M-$5M",
+        "status": "active",
+        "notes": "Renewable energy focus"
+      }
+    },
+    {
+      "category": "clients",
+      "name": "Cascade Pharma",
+      "description": "Pharmaceuticals strategic client with FDA obligations",
+      "detail_1": "Tier Strategic \u00b7 5,500 employees \u00b7 since 2021",
+      "detail_2": "SOC2,HIPAA,FDA \u00b7 Compliance-sensitive \u00b7 FDA audit scheduled Q2",
+      "active": true,
+      "attributes": {
+        "industry": "Pharmaceuticals",
+        "tier": "Strategic",
+        "region": "North America",
+        "employee_count": 5500,
+        "since_year": 2021,
+        "compliance_tags": "SOC2,HIPAA,FDA",
+        "sensitivity": "Compliance-sensitive",
+        "revenue_band": "$5M-$10M",
+        "status": "active",
+        "notes": "FDA audit scheduled Q2"
+      }
+    },
+    {
+      "category": "clients",
+      "name": "Redwood Logistics",
+      "description": "APAC logistics client with contract under renegotiation",
+      "detail_1": "Tier Standard \u00b7 2,800 employees \u00b7 since 2023 \u00b7 region APAC",
+      "detail_2": "ISO27001 \u00b7 inactive \u00b7 contract under renegotiation",
+      "active": false,
+      "attributes": {
+        "industry": "Logistics",
+        "tier": "Standard",
+        "region": "APAC",
+        "employee_count": 2800,
+        "since_year": 2023,
+        "compliance_tags": "ISO27001",
+        "sensitivity": "Standard",
+        "revenue_band": "$1M-$5M",
+        "status": "inactive",
+        "notes": "Contract under renegotiation"
+      }
+    },
+    {
+      "category": "services",
+      "name": "AI Helpdesk Platform",
+      "description": "Internal AI-powered employee support across HR, IT, Compliance, and Legal",
+      "detail_1": "Internal \u00b7 24/7 \u00b7 launched 2024 \u00b7 ~4,200 monthly queries",
+      "detail_2": "Users: all employees \u00b7 compliance SOC2 \u00b7 status active",
+      "active": true,
+      "attributes": {
+        "type": "Internal",
+        "departments": "HR,IT,Compliance,Legal",
+        "availability": "24/7",
+        "compliance_tags": "SOC2",
+        "users": "All employees",
+        "launched_year": 2024,
+        "monthly_queries": 4200,
+        "status": "active"
+      }
+    },
+    {
+      "category": "services",
+      "name": "Compliance Advisory",
+      "description": "External regulatory and policy advisory for enterprise clients",
+      "detail_1": "External \u00b7 business hours \u00b7 Compliance,Legal \u00b7 launched 2020",
+      "detail_2": "SOC2,PCI,GDPR \u00b7 ~310 monthly queries \u00b7 status active",
+      "active": true,
+      "attributes": {
+        "type": "External",
+        "departments": "Compliance,Legal",
+        "availability": "Business hours",
+        "compliance_tags": "SOC2,PCI,GDPR",
+        "users": "Enterprise clients",
+        "launched_year": 2020,
+        "monthly_queries": 310,
+        "status": "active"
+      }
+    },
+    {
+      "category": "services",
+      "name": "Data Privacy Consulting",
+      "description": "External privacy consulting for healthcare and finance clients",
+      "detail_1": "External \u00b7 Legal,Compliance \u00b7 business hours \u00b7 launched 2021",
+      "detail_2": "GDPR,HIPAA \u00b7 ~185 monthly queries \u00b7 status active",
+      "active": true,
+      "attributes": {
+        "type": "External",
+        "departments": "Legal,Compliance",
+        "availability": "Business hours",
+        "compliance_tags": "GDPR,HIPAA",
+        "users": "Healthcare and Finance clients",
+        "launched_year": 2021,
+        "monthly_queries": 185,
+        "status": "active"
+      }
+    },
+    {
+      "category": "services",
+      "name": "IT Managed Services",
+      "description": "External 24/7 IT managed services for strategic clients",
+      "detail_1": "External \u00b7 IT \u00b7 24/7 \u00b7 launched 2019 \u00b7 ~620 monthly queries",
+      "detail_2": "SOC2,ISO27001 \u00b7 users: strategic clients \u00b7 status active",
+      "active": true,
+      "attributes": {
+        "type": "External",
+        "departments": "IT",
+        "availability": "24/7",
+        "compliance_tags": "SOC2,ISO27001",
+        "users": "Strategic clients",
+        "launched_year": 2019,
+        "monthly_queries": 620,
+        "status": "active"
+      }
+    },
+    {
+      "category": "services",
+      "name": "HR Policy Advisory",
+      "description": "External HR policy advisory for enterprise clients",
+      "detail_1": "External \u00b7 HR \u00b7 business hours \u00b7 launched 2022 \u00b7 ~140 monthly queries",
+      "detail_2": "SOC2 \u00b7 status active",
+      "active": true,
+      "attributes": {
+        "type": "External",
+        "departments": "HR",
+        "availability": "Business hours",
+        "compliance_tags": "SOC2",
+        "users": "Enterprise clients",
+        "launched_year": 2022,
+        "monthly_queries": 140,
+        "status": "active"
+      }
+    },
+    {
+      "category": "services",
+      "name": "Security Assessment",
+      "description": "External security assessments for all client tiers",
+      "detail_1": "External \u00b7 IT,Compliance \u00b7 by appointment \u00b7 launched 2023",
+      "detail_2": "SOC2,ISO27001,PCI \u00b7 ~90 monthly queries \u00b7 status active",
+      "active": true,
+      "attributes": {
+        "type": "External",
+        "departments": "IT,Compliance",
+        "availability": "By appointment",
+        "compliance_tags": "SOC2,ISO27001,PCI",
+        "users": "All client tiers",
+        "launched_year": 2023,
+        "monthly_queries": 90,
+        "status": "active"
+      }
+    },
+    {
+      "category": "services",
+      "name": "AI Strategy Consulting",
+      "description": "External AI strategy consulting for enterprise and strategic clients",
+      "detail_1": "External \u00b7 Product,Engineering \u00b7 business hours \u00b7 launched 2024",
+      "detail_2": "SOC2 \u00b7 ~55 monthly queries \u00b7 status beta",
+      "active": true,
+      "attributes": {
+        "type": "External",
+        "departments": "Product,Engineering",
+        "availability": "Business hours",
+        "compliance_tags": "SOC2",
+        "users": "Enterprise and Strategic clients",
+        "launched_year": 2024,
+        "monthly_queries": 55,
+        "status": "beta"
+      }
+    },
+    {
+      "category": "locations",
+      "name": "New York HQ",
+      "description": "Ampcus headquarters in New York, USA",
+      "detail_1": "Headquarters \u00b7 350 employees \u00b7 EST \u00b7 opened 2015 \u00b7 28,000 sq ft",
+      "detail_2": "Departments: Engineering, Product, Legal, HR",
+      "active": true,
+      "attributes": {
+        "type": "Headquarters",
+        "city": "New York",
+        "state": "NY",
+        "country": "USA",
+        "timezone": "EST",
+        "employee_count": 350,
+        "departments": "Engineering,Product,Legal,HR",
+        "opened_year": 2015,
+        "sq_footage": 28000,
+        "status": "active"
+      }
+    },
+    {
+      "category": "locations",
+      "name": "Austin Delivery Center",
+      "description": "US delivery and customer success hub in Austin, Texas",
+      "detail_1": "Delivery center \u00b7 120 employees \u00b7 CST \u00b7 opened 2021 \u00b7 9,500 sq ft",
+      "detail_2": "Departments: Customer Success, Operations",
+      "active": true,
+      "attributes": {
+        "type": "Delivery center",
+        "city": "Austin",
+        "state": "TX",
+        "country": "USA",
+        "timezone": "CST",
+        "employee_count": 120,
+        "departments": "Customer Success,Operations",
+        "opened_year": 2021,
+        "sq_footage": 9500,
+        "status": "active"
+      }
+    },
+    {
+      "category": "locations",
+      "name": "London Office",
+      "description": "UK regional office in London",
+      "detail_1": "Regional office \u00b7 65 employees \u00b7 GMT \u00b7 opened 2022 \u00b7 4,200 sq ft",
+      "detail_2": "Departments: Sales, Compliance, Legal",
+      "active": true,
+      "attributes": {
+        "type": "Regional office",
+        "city": "London",
+        "state": "England",
+        "country": "UK",
+        "timezone": "GMT",
+        "employee_count": 65,
+        "departments": "Sales,Compliance,Legal",
+        "opened_year": 2022,
+        "sq_footage": 4200,
+        "status": "active"
+      }
+    },
+    {
+      "category": "locations",
+      "name": "Bangalore Tech Hub",
+      "description": "Engineering hub in Bangalore, India",
+      "detail_1": "Engineering hub \u00b7 210 employees \u00b7 IST \u00b7 opened 2023 \u00b7 12,000 sq ft",
+      "detail_2": "Departments: Engineering, QA, DevOps",
+      "active": true,
+      "attributes": {
+        "type": "Engineering hub",
+        "city": "Bangalore",
+        "state": "Karnataka",
+        "country": "India",
+        "timezone": "IST",
+        "employee_count": 210,
+        "departments": "Engineering,QA,DevOps",
+        "opened_year": 2023,
+        "sq_footage": 12000,
+        "status": "active"
+      }
+    },
+    {
+      "category": "locations",
+      "name": "Toronto Office",
+      "description": "Canada regional office in Toronto",
+      "detail_1": "Regional office \u00b7 45 employees \u00b7 EST \u00b7 opened 2023 \u00b7 2,800 sq ft",
+      "detail_2": "Departments: Sales, HR",
+      "active": true,
+      "attributes": {
+        "type": "Regional office",
+        "city": "Toronto",
+        "state": "Ontario",
+        "country": "Canada",
+        "timezone": "EST",
+        "employee_count": 45,
+        "departments": "Sales,HR",
+        "opened_year": 2023,
+        "sq_footage": 2800,
+        "status": "active"
+      }
+    },
+    {
+      "category": "locations",
+      "name": "Singapore Hub",
+      "description": "APAC hub in Singapore",
+      "detail_1": "APAC hub \u00b7 38 employees \u00b7 SGT \u00b7 opened 2024 \u00b7 2,100 sq ft",
+      "detail_2": "Departments: Sales, Customer Success",
+      "active": true,
+      "attributes": {
+        "type": "APAC hub",
+        "city": "Singapore",
+        "state": "Singapore",
+        "country": "Singapore",
+        "timezone": "SGT",
+        "employee_count": 38,
+        "departments": "Sales,Customer Success",
+        "opened_year": 2024,
+        "sq_footage": 2100,
+        "status": "active"
+      }
+    },
+    {
+      "category": "products",
+      "name": "Ampcus Knowledge Base",
+      "description": "Internal departmental policy and procedure library",
+      "detail_1": "Internal platform \u00b7 Engineering \u00b7 v2.1 \u00b7 745 monthly users",
+      "detail_2": "Departments HR,IT,Compliance,Legal \u00b7 access: all employees",
+      "active": true,
+      "attributes": {
+        "type": "Internal platform",
+        "owner": "Engineering",
+        "departments": "HR,IT,Compliance,Legal",
+        "users": "All employees",
+        "version": "2.1",
+        "access": "All employees",
+        "monthly_users": 745,
+        "status": "active"
+      }
+    },
+    {
+      "category": "products",
+      "name": "Ops Health Dashboard",
+      "description": "Internal ticket and SLA command center for admins",
+      "detail_1": "Internal tooling \u00b7 Operations \u00b7 v1.4 \u00b7 12 monthly users",
+      "detail_2": "Access: admin only \u00b7 departments Operations, Engineering",
+      "active": true,
+      "attributes": {
+        "type": "Internal tooling",
+        "owner": "Operations",
+        "departments": "Operations,Engineering",
+        "users": "Admin only",
+        "version": "1.4",
+        "access": "Admin only",
+        "monthly_users": 12,
+        "status": "active"
+      }
+    },
+    {
+      "category": "products",
+      "name": "Client Portal",
+      "description": "External platform for enterprise client accounts",
+      "detail_1": "External platform \u00b7 Product \u00b7 v3.0 \u00b7 2,300 monthly users",
+      "detail_2": "Customer Success, Sales \u00b7 access: client accounts",
+      "active": true,
+      "attributes": {
+        "type": "External platform",
+        "owner": "Product",
+        "departments": "Customer Success,Sales",
+        "users": "Enterprise clients",
+        "version": "3.0",
+        "access": "Client accounts",
+        "monthly_users": 2300,
+        "status": "active"
+      }
+    },
+    {
+      "category": "products",
+      "name": "Compliance Tracker",
+      "description": "Internal compliance tracking platform",
+      "detail_1": "Internal platform \u00b7 Compliance \u00b7 v1.0 \u00b7 18 monthly users",
+      "detail_2": "Access: restricted \u00b7 Compliance and Legal",
+      "active": true,
+      "attributes": {
+        "type": "Internal platform",
+        "owner": "Compliance",
+        "departments": "Compliance,Legal",
+        "users": "Compliance team",
+        "version": "1.0",
+        "access": "Restricted",
+        "monthly_users": 18,
+        "status": "active"
+      }
+    },
+    {
+      "category": "products",
+      "name": "AI Query Engine",
+      "description": "Internal beta AI query platform for admins and employees",
+      "detail_1": "Internal platform \u00b7 Engineering \u00b7 v0.9 \u00b7 34 monthly users",
+      "detail_2": "Beta \u2014 internal only \u00b7 departments: all",
+      "active": true,
+      "attributes": {
+        "type": "Internal platform",
+        "owner": "Engineering",
+        "departments": "All",
+        "users": "Admin and employees",
+        "version": "0.9",
+        "access": "Beta \u2014 internal only",
+        "monthly_users": 34,
+        "status": "beta"
+      }
+    },
+    {
+      "category": "products",
+      "name": "Field Service App",
+      "description": "Mobile application for on-site operations teams",
+      "detail_1": "Mobile application \u00b7 Product \u00b7 v1.2 \u00b7 89 monthly users",
+      "detail_2": "Access: operations staff \u00b7 Customer Success, Operations",
+      "active": true,
+      "attributes": {
+        "type": "Mobile application",
+        "owner": "Product",
+        "departments": "Customer Success,Operations",
+        "users": "On-site teams",
+        "version": "1.2",
+        "access": "Operations staff",
+        "monthly_users": 89,
+        "status": "active"
+      }
+    },
+    {
+      "category": "team",
+      "name": "Sarah Chen",
+      "description": "Chief Technology Officer leading Engineering from New York HQ",
+      "detail_1": "CTO \u00b7 Engineering \u00b7 New York HQ \u00b7 joined 2017",
+      "detail_2": "Expertise: AI, Cloud Architecture, Security",
+      "active": true,
+      "attributes": {
+        "title": "Chief Technology Officer",
+        "department": "Engineering",
+        "location": "New York HQ",
+        "expertise": "AI,Cloud Architecture,Security",
+        "joined_year": 2017,
+        "status": "active"
+      }
+    },
+    {
+      "category": "team",
+      "name": "Marcus Williams",
+      "description": "Head of Compliance based at New York HQ",
+      "detail_1": "Head of Compliance \u00b7 Compliance \u00b7 New York HQ \u00b7 joined 2019",
+      "detail_2": "Expertise: GDPR, SOC2, HIPAA, PCI",
+      "active": true,
+      "attributes": {
+        "title": "Head of Compliance",
+        "department": "Compliance",
+        "location": "New York HQ",
+        "expertise": "GDPR,SOC2,HIPAA,PCI",
+        "joined_year": 2019,
+        "status": "active"
+      }
+    },
+    {
+      "category": "team",
+      "name": "Priya Nair",
+      "description": "VP Engineering based at Bangalore Tech Hub",
+      "detail_1": "VP Engineering \u00b7 Engineering \u00b7 Bangalore Tech Hub \u00b7 joined 2023",
+      "detail_2": "Expertise: Backend, AI, Platform",
+      "active": true,
+      "attributes": {
+        "title": "VP Engineering",
+        "department": "Engineering",
+        "location": "Bangalore Tech Hub",
+        "expertise": "Backend,AI,Platform",
+        "joined_year": 2023,
+        "status": "active"
+      }
+    },
+    {
+      "category": "team",
+      "name": "David Osei",
+      "description": "Head of Legal based at London Office",
+      "detail_1": "Head of Legal \u00b7 Legal \u00b7 London Office \u00b7 joined 2022",
+      "detail_2": "Expertise: Employment Law, Contracts, IP",
+      "active": true,
+      "attributes": {
+        "title": "Head of Legal",
+        "department": "Legal",
+        "location": "London Office",
+        "expertise": "Employment Law,Contracts,IP",
+        "joined_year": 2022,
+        "status": "active"
+      }
+    },
+    {
+      "category": "team",
+      "name": "Rachel Torres",
+      "description": "Head of HR based at New York HQ",
+      "detail_1": "Head of HR \u00b7 HR \u00b7 New York HQ \u00b7 joined 2020",
+      "detail_2": "Expertise: Policy, Talent, L&D",
+      "active": true,
+      "attributes": {
+        "title": "Head of HR",
+        "department": "HR",
+        "location": "New York HQ",
+        "expertise": "Policy,Talent,L&D",
+        "joined_year": 2020,
+        "status": "active"
+      }
+    },
+    {
+      "category": "team",
+      "name": "James Kwon",
+      "description": "Head of Customer Success based at Austin Delivery Center",
+      "detail_1": "Head of Customer Success \u00b7 Austin Delivery Center \u00b7 joined 2021",
+      "detail_2": "Expertise: Client Relations, Onboarding, SLA",
+      "active": true,
+      "attributes": {
+        "title": "Head of Customer Success",
+        "department": "Customer Success",
+        "location": "Austin Delivery Center",
+        "expertise": "Client Relations,Onboarding,SLA",
+        "joined_year": 2021,
+        "status": "active"
+      }
+    },
+    {
+      "category": "partnerships",
+      "name": "Anthropic",
+      "description": "Technology vendor providing Claude API for Ampcus AI products",
+      "detail_1": "Technology vendor \u00b7 Claude API \u00b7 Enterprise tier \u00b7 since 2024",
+      "detail_2": "Used for AI Helpdesk Platform, AI Query Engine, AI Strategy Consulting",
+      "active": true,
+      "attributes": {
+        "type": "Technology vendor",
+        "product": "Claude API",
+        "used_for": "AI Helpdesk Platform,AI Query Engine,AI Strategy Consulting",
+        "contract_tier": "Enterprise",
+        "since_year": 2024,
+        "compliance_tags": "SOC2",
+        "status": "active"
+      }
+    },
+    {
+      "category": "partnerships",
+      "name": "AWS",
+      "description": "Cloud infrastructure partner for Ampcus platform hosting",
+      "detail_1": "Cloud infrastructure \u00b7 EC2,S3,RDS,Lambda \u00b7 Enterprise \u00b7 since 2019",
+      "detail_2": "Used for all platform infrastructure \u00b7 SOC2,ISO27001,HIPAA",
+      "active": true,
+      "attributes": {
+        "type": "Cloud infrastructure",
+        "product": "EC2,S3,RDS,Lambda",
+        "used_for": "All platform infrastructure",
+        "contract_tier": "Enterprise",
+        "since_year": 2019,
+        "compliance_tags": "SOC2,ISO27001,HIPAA",
+        "status": "active"
+      }
+    },
+    {
+      "category": "partnerships",
+      "name": "Salesforce",
+      "description": "CRM platform partner for sales and client management",
+      "detail_1": "CRM platform \u00b7 Sales Cloud, Service Cloud \u00b7 Business \u00b7 since 2020",
+      "detail_2": "Used for client management and sales pipeline \u00b7 SOC2",
+      "active": true,
+      "attributes": {
+        "type": "CRM platform",
+        "product": "Sales Cloud,Service Cloud",
+        "used_for": "Client management,Sales pipeline",
+        "contract_tier": "Business",
+        "since_year": 2020,
+        "compliance_tags": "SOC2",
+        "status": "active"
+      }
+    },
+    {
+      "category": "partnerships",
+      "name": "Okta",
+      "description": "Identity provider for employee and client portal authentication",
+      "detail_1": "Identity provider \u00b7 SSO,MFA,Directory \u00b7 Business \u00b7 since 2021",
+      "detail_2": "Used for employee authentication and client portal access \u00b7 SOC2,FedRAMP",
+      "active": true,
+      "attributes": {
+        "type": "Identity provider",
+        "product": "SSO,MFA,Directory",
+        "used_for": "Employee authentication,Client portal access",
+        "contract_tier": "Business",
+        "since_year": 2021,
+        "compliance_tags": "SOC2,FedRAMP",
+        "status": "active"
+      }
+    },
+    {
+      "category": "partnerships",
+      "name": "ServiceNow",
+      "description": "IT service management partner for IT and HR workflows",
+      "detail_1": "ITSM \u00b7 ITSM, HR Service Delivery \u00b7 Enterprise \u00b7 since 2022",
+      "detail_2": "Used for IT ticketing and HR requests \u00b7 SOC2,ISO27001",
+      "active": true,
+      "attributes": {
+        "type": "IT service management",
+        "product": "ITSM,HR Service Delivery",
+        "used_for": "IT ticketing,HR requests",
+        "contract_tier": "Enterprise",
+        "since_year": 2022,
+        "compliance_tags": "SOC2,ISO27001",
+        "status": "active"
+      }
+    }
+  ]
+}

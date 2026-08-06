@@ -12,6 +12,9 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.agents.board_monitor import run_board_monitor_once
+from app.onboarding.reminder_job import run_onboarding_reminders_once
+from app.reservations.reminder_job import run_reservation_reminders_once
+from app.reservations.store import seed_guesthouses
 from app.analytics.stats import reset_stats
 from app.api.routes_admin_insights import router as admin_insights_router
 from app.api.routes_auth import router as auth_router
@@ -20,11 +23,13 @@ from app.api.routes_health import router as health_router
 from app.api.routes_ingest import router as ingest_router
 from app.api.routes_kb import router as kb_router
 from app.api.routes_notifications import router as notifications_router
+from app.api.routes_onboarding import router as onboarding_router
 from app.api.routes_nlp_query import router as nlp_query_router
 from app.api.routes_query import router as query_router
 from app.api.routes_sessions import router as sessions_router
 from app.api.routes_stats import router as stats_router
 from app.api.routes_tickets import router as tickets_router
+from app.api.routes_reservations import router as reservations_router
 from app.audit.db import init_audit_db
 from app.auth.users import bootstrap_admin_if_empty
 from app.cache.redis_cache import get_cache
@@ -40,6 +45,52 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+async def _onboarding_reminder_loop(stop: asyncio.Event) -> None:
+    """Daily onboarding reminders at configured hour (once per calendar day)."""
+    settings = get_settings()
+    poll = max(60.0, float(settings.onboarding_reminder_poll_seconds or 300.0))
+    target_hour = int(settings.onboarding_reminder_hour or 9)
+    last_run_date: str | None = None
+    while not stop.is_set():
+        try:
+            from datetime import date, datetime
+
+            now = datetime.now()
+            today = date.today().isoformat()
+            if now.hour >= target_hour and last_run_date != today:
+                await asyncio.to_thread(run_onboarding_reminders_once, now=now)
+                last_run_date = today
+        except Exception as exc:
+            logger.warning("Onboarding reminder loop error: %s", exc)
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=poll)
+        except asyncio.TimeoutError:
+            continue
+
+
+async def _reservation_reminder_loop(stop: asyncio.Event) -> None:
+    """Daily guesthouse reminders + 24h auto-approve."""
+    settings = get_settings()
+    poll = max(60.0, float(settings.reservation_reminder_poll_seconds or 300.0))
+    target_hour = int(settings.reservation_reminder_hour or 9)
+    last_run_date: str | None = None
+    while not stop.is_set():
+        try:
+            from datetime import date, datetime
+
+            now = datetime.now()
+            today = date.today().isoformat()
+            if now.hour >= target_hour and last_run_date != today:
+                await asyncio.to_thread(run_reservation_reminders_once, now=now)
+                last_run_date = today
+        except Exception as exc:
+            logger.warning("Reservation reminder loop error: %s", exc)
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=poll)
+        except asyncio.TimeoutError:
+            continue
 
 
 async def _board_monitor_loop(stop: asyncio.Event) -> None:
@@ -67,6 +118,7 @@ async def lifespan(_app: FastAPI):
     logger.info("Collection counts: %s", store.collection_counts())
     bootstrap_admin_if_empty()
     init_audit_db()
+    seed_guesthouses()
     seed_company_facts_if_empty()
     try:
         from app.documents.storage import cleanup_old_document_files
@@ -84,12 +136,26 @@ async def lifespan(_app: FastAPI):
         logger.warning("kb_stats refresh failed on startup", exc_info=True)
     stop = asyncio.Event()
     reminder_task = asyncio.create_task(_board_monitor_loop(stop))
+    onboarding_task = asyncio.create_task(_onboarding_reminder_loop(stop))
+    reservation_task = asyncio.create_task(_reservation_reminder_loop(stop))
     logger.info("BoardMonitorAgent started (escalation board SLA)")
+    logger.info("Onboarding reminder loop started")
+    logger.info("Reservation reminder loop started")
     yield
     stop.set()
     reminder_task.cancel()
+    onboarding_task.cancel()
+    reservation_task.cancel()
     try:
         await reminder_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await onboarding_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await reservation_task
     except asyncio.CancelledError:
         pass
     logger.info("Shutting down Ampcus Helpdesk")
@@ -112,6 +178,8 @@ app.include_router(ingest_router)
 app.include_router(kb_router)
 app.include_router(tickets_router)
 app.include_router(notifications_router)
+app.include_router(onboarding_router)
+app.include_router(reservations_router)
 app.include_router(stats_router)
 app.include_router(admin_insights_router)
 

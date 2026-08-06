@@ -82,6 +82,18 @@ class Settings(BaseSettings):
     document_storage_dir: str = "./data/documents"
     document_file_ttl_days: int = 7  # original bytes on disk
 
+    # Onboarding
+    onboarding_hr_email: str = "hr-admin@ampcus.com"
+    onboarding_reminder_hour: int = 9
+    onboarding_reminder_poll_seconds: float = 300.0
+    onboarding_window_days: int = 7
+
+    # Guesthouse reservations
+    reservation_hr_email: str = "hr@ampcus.com"
+    reservation_reminder_hour: int = 9
+    reservation_reminder_poll_seconds: float = 300.0
+    reservation_auto_approve_hours: int = 24
+
     @property
     def escalate_department_list(self) -> List[str]:
         return [d.strip().lower() for d in self.escalate_departments.split(",") if d.strip()]

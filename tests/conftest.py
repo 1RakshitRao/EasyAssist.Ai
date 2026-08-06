@@ -126,3 +126,22 @@ def employee_headers(client, admin_headers):
     )
     assert res.status_code == 200, res.text
     return {"Authorization": f"Bearer {res.json()['access_token']}"}
+
+
+def confirm_pending_ticket(client, headers, query_response: dict) -> dict:
+    """Confirm a pending KB-miss / escalation ticket from a prior /query response."""
+    session_id = query_response.get("session_id")
+    assert session_id, "query response missing session_id"
+    res = client.post(
+        "/query",
+        headers=headers,
+        json={
+            "question": "(confirm)",
+            "confirm_ticket": True,
+            "session_id": session_id,
+        },
+    )
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data.get("ticket_id"), data
+    return data

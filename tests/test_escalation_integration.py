@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from app.tickets.store import get_ticket, list_tickets
+from tests.conftest import confirm_pending_ticket
 
 
 @pytest.fixture()
@@ -21,8 +22,32 @@ def capture_mail(monkeypatch):
     return sent
 
 
+def _query_breach(client, headers):
+    res = client.post(
+        "/query",
+        headers=headers,
+        json={
+            "question": "I think we had a customer data breach — what should I do legally?"
+        },
+    )
+    assert res.status_code == 200, res.text
+    data = res.json()
+    if not data.get("escalated"):
+        res = client.post(
+            "/query",
+            headers=headers,
+            json={
+                "question": (
+                    "I think we had a customer data breach — what should I do?"
+                )
+            },
+        )
+        assert res.status_code == 200
+        data = res.json()
+    return data
+
+
 def test_high_it_creates_escalation_and_emails(client, employee_headers, capture_mail):
-    # Heuristic/offline path: phishing / outage language → IT high often
     res = client.post(
         "/query",
         headers=employee_headers,
@@ -35,24 +60,13 @@ def test_high_it_creates_escalation_and_emails(client, employee_headers, capture
     )
     assert res.status_code == 200, res.text
     data = res.json()
-    # May escalate if classified high; if not high, still ok to skip assert on escalated
-    # Force check: create via known legal breach path as employee
     if not data.get("escalated"):
-        res = client.post(
-            "/query",
-            headers=employee_headers,
-            json={
-                "question": (
-                    "I think we had a customer data breach — what should I do legally?"
-                )
-            },
-        )
-        assert res.status_code == 200
-        data = res.json()
+        data = _query_breach(client, employee_headers)
 
     assert data.get("escalated") is True
-    assert data.get("ticket_id")
-    ticket = get_ticket(data["ticket_id"])
+    assert data.get("pending_ticket_confirmation") is True
+    confirmed = confirm_pending_ticket(client, employee_headers, data)
+    ticket = get_ticket(confirmed["ticket_id"])
     assert ticket is not None
     assert ticket["ticket_type"] == "escalation"
     assert ticket.get("admin_notified_at")
@@ -65,16 +79,10 @@ def test_high_it_creates_escalation_and_emails(client, employee_headers, capture
 def test_assign_does_not_email_solution_resolve_does(
     client, admin_headers, employee_headers, capture_mail
 ):
-    res = client.post(
-        "/query",
-        headers=employee_headers,
-        json={
-            "question": "I think we had a customer data breach — what should I do?"
-        },
-    )
-    assert res.status_code == 200
-    ticket_id = res.json()["ticket_id"]
-    assert ticket_id
+    data = _query_breach(client, employee_headers)
+    assert data.get("escalated") is True
+    confirmed = confirm_pending_ticket(client, employee_headers, data)
+    ticket_id = confirmed["ticket_id"]
     capture_mail.clear()
 
     assigned = client.patch(
@@ -83,7 +91,6 @@ def test_assign_does_not_email_solution_resolve_does(
         json={"department": "legal", "admin_notes": "Looking into it"},
     )
     assert assigned.status_code == 200
-    # Assign must not send employee solution mail
     assert not any("Update on ticket" in m["subject"] for m in capture_mail)
 
     resolved = client.patch(
@@ -105,14 +112,9 @@ def test_assign_does_not_email_solution_resolve_does(
 
 
 def test_reminder_helper_after_two_hours(client, employee_headers, capture_mail, monkeypatch):
-    res = client.post(
-        "/query",
-        headers=employee_headers,
-        json={
-            "question": "I think we had a customer data breach — what should I do?"
-        },
-    )
-    ticket_id = res.json()["ticket_id"]
+    data = _query_breach(client, employee_headers)
+    confirmed = confirm_pending_ticket(client, employee_headers, data)
+    ticket_id = confirmed["ticket_id"]
     old = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
     from app.tickets import store as store_mod
 

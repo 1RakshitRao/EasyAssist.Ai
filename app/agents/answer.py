@@ -51,6 +51,7 @@ def generate_answer(
     )
 
     if not chunks:
+        logger.warning("generate_answer called with empty chunks — refusing")
         return {
             "answer": NO_CONTEXT_ANSWER,
             "model_used": "none",

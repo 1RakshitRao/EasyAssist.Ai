@@ -79,6 +79,40 @@ def push_ticket_notification(ticket: Dict[str, Any]) -> Dict[str, Any]:
     return note
 
 
+def push_reservation_notification(reservation: Dict[str, Any]) -> Dict[str, Any]:
+    """Record an in-app alert when a guesthouse reservation needs HR review."""
+    conf = reservation.get("confirmation_number") or reservation.get("id") or "—"
+    employee = reservation.get("employee_email") or "employee"
+    gh = reservation.get("guesthouse_name") or "Guesthouse"
+    room = reservation.get("room_number") or "?"
+    checkin = reservation.get("checkin_date") or ""
+    checkout = reservation.get("checkout_date") or ""
+    note = {
+        "id": str(uuid.uuid4()),
+        "kind": "reservation_pending",
+        "title": "Guesthouse approval needed",
+        "body": (
+            f"{employee} · {conf} · {gh} Room {room} "
+            f"({checkin} → {checkout})"
+        ),
+        "reservation_id": reservation.get("id"),
+        "confirmation_number": conf,
+        "employee_email": employee,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "read_at": None,
+    }
+    with _lock:
+        items = _read_all()
+        items.insert(0, note)
+        _write_all(items[:_MAX_ITEMS])
+    logger.info(
+        "in-app reservation notification id=%s reservation_id=%s",
+        note["id"],
+        note.get("reservation_id"),
+    )
+    return note
+
+
 def list_notifications(
     *, unread_only: bool = False, limit: int = 50
 ) -> List[Dict[str, Any]]:

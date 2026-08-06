@@ -24,6 +24,7 @@ router = APIRouter(tags=["nlp-query"])
 
 @router.post("/nlp-query", response_model=NlpQueryResponse)
 def nlp_query(req: NlpQueryRequest, user: CurrentUser) -> NlpQueryResponse:
+    """Deprecated for chat UI — use POST /query (Supervisor routes nlp_query)."""
     email = str(user.get("email") or "")
     session_id = None
     if email:
