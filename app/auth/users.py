@@ -119,6 +119,24 @@ def create_user(
     return dict(user)
 
 
+def set_user_password(email: str, password: str) -> Optional[Dict[str, Any]]:
+    """Reset password for an existing user."""
+    email_key = (email or "").strip().lower()
+    if not email_key or "@" not in email_key:
+        raise ValueError("Valid email is required")
+    if not password or len(password) < 8:
+        raise ValueError("Password must be at least 8 characters")
+    with _lock:
+        users = _read_all()
+        for user in users:
+            if str(user.get("email") or "").lower() == email_key:
+                user["password_hash"] = hash_password(password)
+                _write_all(users)
+                logger.info("Reset password for email=%s", email_key)
+                return dict(user)
+    return None
+
+
 def authenticate(email: str, password: str) -> Optional[Dict[str, Any]]:
     user = get_user_by_email(email)
     if not user:

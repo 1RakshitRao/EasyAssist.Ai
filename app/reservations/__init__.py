@@ -1,0 +1,1 @@
+"""Guesthouse reservation module."""

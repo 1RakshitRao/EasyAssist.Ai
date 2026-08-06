@@ -146,6 +146,31 @@ def list_tickets(
     return tickets
 
 
+def list_tickets_for_user(
+    email: str,
+    *,
+    open_only: bool = True,
+) -> List[Dict[str, Any]]:
+    """Tickets filed by this employee (matched on created_by_email)."""
+    email_norm = str(email or "").strip().lower()
+    if not email_norm:
+        return []
+    with _lock:
+        tickets = _read_all()
+    mine = [
+        t
+        for t in tickets
+        if str(t.get("created_by_email") or "").strip().lower() == email_norm
+    ]
+    if open_only:
+        mine = [t for t in mine if t.get("status") in {"open", "assigned"}]
+    return sorted(
+        mine,
+        key=lambda t: str(t.get("created_at") or ""),
+        reverse=True,
+    )
+
+
 def list_due_escalation_reminders(
     *,
     now: Optional[datetime] = None,

@@ -59,14 +59,16 @@ def test_employee_can_query_not_tickets(client, employee_headers):
 
 
 def test_agent_tickets_not_ingest(client, agent_headers):
+    from tests.conftest import confirm_pending_ticket
+
     q = client.post(
         "/query",
         headers=agent_headers,
         json={"question": "Where is the rooftop telescope stored?"},
     )
     assert q.status_code == 200
-    ticket_id = q.json().get("ticket_id")
-    assert ticket_id
+    assert q.json()["pending_ticket_confirmation"] is True
+    ticket_id = confirm_pending_ticket(client, agent_headers, q.json())["ticket_id"]
 
     listed = client.get(
         "/tickets",

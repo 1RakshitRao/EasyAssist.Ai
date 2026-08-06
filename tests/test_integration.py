@@ -73,9 +73,26 @@ def test_query_unknown_creates_ticket(client, admin_headers):
     assert res.status_code == 200
     data = res.json()
     assert data["department"] == "unknown"
-    assert data["ticket_id"]
-    assert data["model_used"] == "hitl_ticket"
+    assert data["pending_ticket_confirmation"] is True
+    assert data["ticket_id"] is None
+    assert data["model_used"] == "no_context"
     assert data["context_used"] is False
+    assert "support ticket" in data["answer"].lower()
+
+    confirm = client.post(
+        "/query",
+        headers=admin_headers,
+        json={
+            "question": "(confirm)",
+            "confirm_ticket": True,
+            "session_id": data["session_id"],
+        },
+    )
+    assert confirm.status_code == 200
+    confirmed = confirm.json()
+    assert confirmed["ticket_id"]
+    assert confirmed["model_used"] == "hitl_ticket"
+    assert confirmed["pending_ticket_confirmation"] is False
 
     tickets = client.get(
         "/tickets",
@@ -84,8 +101,8 @@ def test_query_unknown_creates_ticket(client, admin_headers):
     )
     assert tickets.status_code == 200
     items = tickets.json()
-    assert any(t["id"] == data["ticket_id"] for t in items)
-    match = next(t for t in items if t["id"] == data["ticket_id"])
+    assert any(t["id"] == confirmed["ticket_id"] for t in items)
+    match = next(t for t in items if t["id"] == confirmed["ticket_id"])
     assert match["reason"] == "kb_not_recognized"
 
 
@@ -100,8 +117,23 @@ def test_query_high_severity_escalation(client, admin_headers):
     assert data["department"] == "legal"
     assert data["severity"] == "high"
     assert data["escalated"] is True
-    assert data["ticket_id"]
+    assert data["pending_ticket_confirmation"] is True
+    assert data["ticket_id"] is None
     assert data["context_used"] is True
+
+    confirm = client.post(
+        "/query",
+        headers=admin_headers,
+        json={
+            "question": "(confirm)",
+            "confirm_ticket": True,
+            "session_id": data["session_id"],
+        },
+    )
+    assert confirm.status_code == 200
+    confirmed = confirm.json()
+    assert confirmed["ticket_id"]
+    assert confirmed["escalated"] is True
 
     esc = client.get(
         "/tickets",
@@ -109,7 +141,7 @@ def test_query_high_severity_escalation(client, admin_headers):
         params={"status": "open", "ticket_type": "escalation"},
     )
     assert esc.status_code == 200
-    assert any(t["id"] == data["ticket_id"] for t in esc.json())
+    assert any(t["id"] == confirmed["ticket_id"] for t in esc.json())
 
 
 def test_ingest_unique_then_dedup_conflict(client, admin_headers):
@@ -157,14 +189,16 @@ def test_ingest_unique_then_dedup_conflict(client, admin_headers):
 
 
 def test_promote_unknown_ticket_into_kb(client, admin_headers):
+    from tests.conftest import confirm_pending_ticket
+
     q = client.post(
         "/query",
         headers=admin_headers,
         json={"question": "Where do I park my electric scooter overnight?"},
     )
     assert q.status_code == 200
-    ticket_id = q.json()["ticket_id"]
-    assert ticket_id
+    assert q.json()["pending_ticket_confirmation"] is True
+    ticket_id = confirm_pending_ticket(client, admin_headers, q.json())["ticket_id"]
 
     promote = client.post(
         f"/tickets/{ticket_id}/promote",
@@ -194,6 +228,8 @@ def test_promote_unknown_ticket_into_kb(client, admin_headers):
 
 
 def test_resolve_escalation_ticket(client, admin_headers):
+    from tests.conftest import confirm_pending_ticket
+
     q = client.post(
         "/query",
         headers=admin_headers,
@@ -202,7 +238,8 @@ def test_resolve_escalation_ticket(client, admin_headers):
     assert q.status_code == 200
     data = q.json()
     assert data["escalated"] is True
-    ticket_id = data["ticket_id"]
+    assert data["pending_ticket_confirmation"] is True
+    ticket_id = confirm_pending_ticket(client, admin_headers, data)["ticket_id"]
 
     resolved = client.patch(
         f"/tickets/{ticket_id}/resolve",

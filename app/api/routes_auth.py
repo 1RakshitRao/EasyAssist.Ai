@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from app.audit.enforcement import complete_training, decode_training_token
 from app.auth.deps import AdminUser, CurrentUser, get_current_user
 from app.auth.jwt import ROLES, create_access_token
-from app.auth.users import authenticate, create_user, list_users, public_user
+from app.auth.users import authenticate, create_user, list_users, public_user, set_user_password
 from app.config import get_settings
 from app.models.schemas import CreateUserRequest, LoginRequest, TokenResponse, UserPublic
 
@@ -21,6 +21,20 @@ _optional_bearer = HTTPBearer(auto_error=False)
 
 class TrainingCompleteRequest(BaseModel):
     token: Optional[str] = Field(None, description="Signed training link token")
+
+
+class ResetPasswordRequest(BaseModel):
+    password: Optional[str] = Field(
+        None,
+        min_length=8,
+        description="New password; omit to auto-generate a temporary password",
+    )
+
+
+class ResetPasswordResponse(BaseModel):
+    email: str
+    temp_password: str
+    user: UserPublic
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -101,3 +115,25 @@ def admin_create_user(req: CreateUserRequest, _admin: AdminUser) -> UserPublic:
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return UserPublic(**public_user(user))
+
+
+@router.post("/users/{email}/reset-password", response_model=ResetPasswordResponse)
+def admin_reset_password(
+    email: str, req: ResetPasswordRequest, _admin: AdminUser
+) -> ResetPasswordResponse:
+    import secrets
+    import string
+
+    alphabet = string.ascii_letters + string.digits + "!@#$"
+    new_password = req.password or "".join(secrets.choice(alphabet) for _ in range(14))
+    try:
+        user = set_user_password(email, new_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return ResetPasswordResponse(
+        email=str(user.get("email") or email).lower(),
+        temp_password=new_password,
+        user=UserPublic(**public_user(user)),
+    )

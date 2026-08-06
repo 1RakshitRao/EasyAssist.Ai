@@ -1,4 +1,4 @@
-"""Escalate node — high-severity queries create an open HITL escalation ticket."""
+"""Escalate node — flag high-severity queries; ticket created only after user confirms."""
 
 from __future__ import annotations
 
@@ -7,15 +7,13 @@ from typing import Any, Dict
 
 from app.agents.timing import ensure_timings, timed
 from app.config import get_settings
-from app.tickets.notify import notify_ticket_opened
-from app.tickets.store import TICKET_TYPE_ESCALATION, create_ticket
 
 logger = logging.getLogger(__name__)
 
 
 def should_escalate(department: str, severity: str) -> bool:
-    """Open a HITL escalation ticket for any high-severity classified query."""
-    _ = department  # kept for call-site compatibility; all depts escalate when high
+    """Flag high-severity classified queries for escalation handling."""
+    _ = department
     return (severity or "").lower().strip() == "high"
 
 
@@ -37,41 +35,23 @@ def escalate_node(state: Dict[str, Any]) -> Dict[str, Any]:
             }
 
         settings = get_settings()
-        in_classic_list = department in settings.escalate_department_list
+        hours = int(settings.escalation_reminder_hours)
         reason = (
             f"High-severity {department.upper()} query — human desk review required."
         )
-        ticket = create_ticket(
-            question=state.get("query") or "",
-            normalized_query=state.get("normalized_query") or "",
-            reason=reason,
-            ticket_type=TICKET_TYPE_ESCALATION,
-            department=department,
-            severity=severity,
-            attempted_depts=list(state.get("attempted_depts") or []),
-            created_by_user_id=state.get("user_id"),
-            created_by_email=state.get("user_email"),
-        )
-        try:
-            notify_ticket_opened(ticket)
-        except Exception as exc:
-            logger.warning("escalate notify failed ticket_id=%s: %s", ticket["id"], exc)
-
-        hours = int(settings.escalation_reminder_hours)
-        label = "escalation" if in_classic_list else "high-severity"
         user_reason = (
-            f"{reason} You should hear back within {hours} hours. "
-            f"{label.capitalize()} ticket: {ticket['id']}"
+            f"This is flagged as high severity. The appropriate {department.upper()} "
+            f"team should review this promptly (target response within {hours} hours)."
         )
         logger.info(
-            "escalate triggered dept=%s severity=%s ticket_id=%s",
+            "escalate flagged dept=%s severity=%s (awaiting user ticket confirm)",
             department,
             severity,
-            ticket["id"],
         )
         return {
             "escalated": True,
             "escalation_reason": user_reason,
-            "ticket_id": ticket["id"],
+            "classify_reason": reason,
+            "ticket_id": None,
             "node_timings": timings,
         }

@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/styles.css?v=claude29" />
+  <link rel="stylesheet" href="/static/styles.css?v=claude33" />
 </head>
 <body class="is-login">
   <div id="login-screen" class="login-screen">
@@ -93,6 +93,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M8 7h8M8 11h6"/></svg>
           <span class="sidebar-label">Knowledge Base</span>
         </button>
+        <button class="nav-btn" data-view="workspace" data-roles="employee,agent,admin" title="My workspace" aria-label="My workspace">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+          <span class="sidebar-label">My Workspace</span>
+        </button>
         <button class="nav-btn" data-view="tickets" data-roles="agent,admin" title="Tickets" aria-label="Tickets">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
           <span class="sidebar-label">Tickets</span>
@@ -112,6 +116,14 @@
         <button class="nav-btn" data-view="nlp-logs" data-roles="admin" title="Company data logs" aria-label="Company data logs">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
           <span class="sidebar-label">Data Logs</span>
+        </button>
+        <button class="nav-btn" data-view="onboarding" data-roles="admin" title="Employee onboarding" aria-label="Employee onboarding">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11v6"/><path d="M19 14h6"/><path d="M19 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span class="sidebar-label">Onboarding</span>
+        </button>
+        <button class="nav-btn" data-view="reservations" data-roles="admin" title="Guesthouse reservations" aria-label="Guesthouse reservations">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+          <span class="sidebar-label">Guesthouses</span>
         </button>
       </nav>
       <div class="sidebar-recents" id="sidebar-recents">
@@ -367,10 +379,6 @@
                       </svg>
                     </button>
                     <input type="file" id="chat-file-input" accept=".pdf,.docx,.txt,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/plain" hidden />
-                    <div class="composer-mode" id="chat-mode-wrap" role="group" aria-label="Answer source">
-                      <button type="button" class="composer-mode-btn" data-mode="kb" id="chat-mode-kb" aria-pressed="true">Chat</button>
-                      <button type="button" class="composer-mode-btn" data-mode="nlp" id="chat-mode-nlp" aria-pressed="false">Company data</button>
-                    </div>
                   </div>
                   <div class="composer-toolbar-right">
                     <div class="composer-model" id="chat-model-wrap">
@@ -405,19 +413,6 @@
                 </div>
               </form>
             </div>
-
-            <aside class="chat-meta" id="chat-meta" hidden>
-              <div class="chat-meta-inner">
-                <span><b>Dept</b> <i id="meta-dept">—</i></span>
-                <span><b>Severity</b> <i id="meta-sev">—</i></span>
-                <span><b>Cached</b> <i id="meta-cached">—</i></span>
-                <span><b>Sim</b> <i id="meta-sim">—</i></span>
-                <span><b>Escalated</b> <i id="meta-esc">—</i></span>
-                <span><b>Ticket</b> <i id="meta-ticket">—</i></span>
-                <span class="meta-wide"><b>Sources</b> <i id="meta-sources">—</i></span>
-                <span class="meta-wide"><b>Model</b> <i id="meta-model">—</i></span>
-              </div>
-            </aside>
           </div>
 
           <aside class="doc-side-panel" id="doc-side-panel" hidden aria-label="Document preview">
@@ -482,6 +477,90 @@
         <div class="kb-tabs" id="kb-tabs" role="tablist"></div>
         <div id="kb-panel" class="kb-panel"></div>
         <div id="kb-pagination" class="pagination" hidden></div>
+      </section>
+
+      <!-- MY WORKSPACE (all employees) -->
+      <section id="view-workspace" class="view">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Personal hub</p>
+            <h1>My Workspace</h1>
+          </div>
+          <div class="topbar-actions">
+            <button id="refresh-workspace" class="chip" type="button">Refresh</button>
+          </div>
+        </header>
+        <p class="section-blurb">
+          Your onboarding checklist, open helpdesk tickets, and upcoming self-service tools — all in one place.
+        </p>
+
+        <div class="workspace-summary" id="workspace-summary"></div>
+
+        <div class="workspace-grid">
+          <article class="panel workspace-module" id="workspace-onboarding-panel">
+            <div class="panel-head workspace-module-head">
+              <div>
+                <h3>Onboarding checklist</h3>
+                <p id="workspace-onboarding-meta">Tasks for your first week at Ampcus</p>
+              </div>
+              <span class="workspace-module-badge" id="workspace-onboarding-badge" hidden>0%</span>
+            </div>
+            <div class="workspace-progress-track" id="workspace-onboarding-progress" hidden>
+              <div class="workspace-progress-fill" id="workspace-onboarding-progress-fill"></div>
+            </div>
+            <div id="workspace-onboarding-body" class="workspace-module-body">
+              <p class="empty">Loading checklist…</p>
+            </div>
+          </article>
+
+          <article class="panel workspace-module" id="workspace-tickets-panel">
+            <div class="panel-head workspace-module-head">
+              <div>
+                <h3>Open helpdesk tickets</h3>
+                <p>Questions submitted when the assistant could not answer</p>
+              </div>
+              <span class="workspace-module-badge muted" id="workspace-tickets-badge">0 open</span>
+            </div>
+            <div id="workspace-tickets-body" class="workspace-module-body">
+              <p class="empty">Loading tickets…</p>
+            </div>
+          </article>
+
+          <article class="panel workspace-module" id="workspace-reservations-panel">
+            <div class="panel-head workspace-module-head">
+              <div>
+                <h3>Guesthouse reservations</h3>
+                <p>Book and manage company guesthouse stays</p>
+              </div>
+              <span class="workspace-module-badge muted" id="workspace-reservations-badge">0 upcoming</span>
+            </div>
+            <div id="workspace-reservations-body" class="workspace-module-body">
+              <p class="empty">Loading reservations…</p>
+            </div>
+          </article>
+
+          <article class="panel workspace-module workspace-module-soon">
+            <div class="panel-head workspace-module-head">
+              <div>
+                <h3>Document submissions</h3>
+                <p>Upload forms and compliance paperwork</p>
+              </div>
+              <span class="workspace-soon-tag">Coming soon</span>
+            </div>
+            <p class="workspace-soon-copy">Submit signed documents and track HR review status in one queue.</p>
+          </article>
+
+          <article class="panel workspace-module workspace-module-soon workspace-module-wide">
+            <div class="panel-head workspace-module-head">
+              <div>
+                <h3>Notifications</h3>
+                <p>Reminders and updates across all workspace modules</p>
+              </div>
+              <span class="workspace-soon-tag">Coming soon</span>
+            </div>
+            <p class="workspace-soon-copy">A unified feed for onboarding reminders, ticket updates, reservation confirmations, and document approvals.</p>
+          </article>
+        </div>
       </section>
 
       <!-- TICKETS — unified board (unknown + escalations) -->
@@ -799,6 +878,331 @@
         </article>
       </section>
 
+      <!-- RESERVATIONS (admin) -->
+      <section id="view-reservations" class="view">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">HR operations</p>
+            <h1>Guesthouse Reservations</h1>
+          </div>
+          <div class="topbar-actions">
+            <button id="refresh-reservations-admin" class="chip" type="button">Refresh</button>
+          </div>
+        </header>
+        <p class="section-blurb">
+          Approve pending requests, review confirmed stays, and manage guesthouse availability from the calendar.
+        </p>
+
+        <article class="panel res-admin-panel">
+          <div class="panel-head">
+            <h3>Pending approvals</h3>
+            <p>Reservations awaiting HR review (auto-approved after 24h if not acted on).</p>
+          </div>
+          <div class="table-wrap" id="reservations-pending-body">
+            <p class="empty">Loading…</p>
+          </div>
+        </article>
+
+        <article class="panel res-admin-panel">
+          <div class="panel-head">
+            <h3>Approved reservations</h3>
+            <p>Confirmed guesthouse stays — employee name and dates.</p>
+          </div>
+          <div class="table-wrap" id="reservations-approved-body">
+            <p class="empty">Loading…</p>
+          </div>
+        </article>
+
+        <article class="panel res-admin-panel res-admin-calendar-panel">
+          <div class="panel-head">
+            <h3>Manage calendar</h3>
+            <p>Reserve, modify, or cancel stays for any employee. Click a booked date to select a reservation.</p>
+          </div>
+          <div class="res-admin-cal-toolbar">
+            <label class="res-admin-field">
+              <span>Property</span>
+              <select id="res-admin-gh-select" aria-label="Guesthouse"></select>
+            </label>
+            <label class="res-admin-field res-admin-field-grow">
+              <span>Employee email</span>
+              <input type="email" id="res-admin-employee-email" placeholder="employee@ampcus.com" />
+            </label>
+          </div>
+          <div id="res-admin-cal-host" class="res-admin-cal-host"></div>
+          <div id="res-admin-cal-detail" class="res-admin-cal-detail" hidden></div>
+          <div class="res-admin-cal-actions">
+            <button type="button" class="btn-primary" id="res-admin-cal-reserve">Reserve for employee</button>
+            <button type="button" class="chip" id="res-admin-cal-modify">Modify dates</button>
+            <button type="button" class="chip danger" id="res-admin-cal-cancel">Cancel stay</button>
+            <button type="button" class="chip" id="res-admin-cal-approve">Approve</button>
+            <button type="button" class="chip danger" id="res-admin-cal-reject">Reject</button>
+          </div>
+          <p id="res-admin-cal-error" class="res-admin-cal-error" hidden></p>
+        </article>
+      </section>
+
+      <!-- ONBOARDING (admin) -->
+      <section id="view-onboarding" class="view">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">HR operations</p>
+            <h1>Employee Onboarding</h1>
+          </div>
+          <div class="topbar-actions">
+            <button id="onboarding-toggle-create" class="chip" type="button">Add new hire</button>
+            <button id="refresh-onboarding" class="chip" type="button">Refresh</button>
+          </div>
+        </header>
+        <p class="section-blurb">
+          Track new-hire checklists, completion rates, and follow-ups for the 7-day onboarding window.
+          Open an employee below to <strong>edit database fields inline</strong> (tasks, reminders, profile) — changes save directly to SQLite.
+        </p>
+
+        <div class="kpi-row" id="onboarding-kpis"></div>
+
+        <article class="panel onboarding-create-panel" id="onboarding-create-panel" hidden>
+          <div class="panel-head">
+            <h3>Create employee record</h3>
+            <p>Generates the onboarding checklist automatically. Optionally provision a login account.</p>
+          </div>
+          <form id="onboarding-create-form" class="onboarding-form">
+            <div class="onboarding-form-grid">
+              <label>
+                Work email
+                <input type="email" name="email" required placeholder="newhire@ampcus.com" />
+              </label>
+              <label>
+                Full name
+                <input type="text" name="full_name" required placeholder="Sarah Johnson" />
+              </label>
+              <label>
+                Employee ID
+                <input type="text" name="employee_id" placeholder="Optional" />
+              </label>
+              <label>
+                Department
+                <select name="department" required>
+                  <option value="engineering">Engineering</option>
+                  <option value="data">Data</option>
+                  <option value="hr">HR</option>
+                  <option value="sales">Sales</option>
+                  <option value="compliance">Compliance</option>
+                  <option value="legal">Legal</option>
+                </select>
+              </label>
+              <label>
+                Role title
+                <input type="text" name="role_title" required placeholder="Software Engineer" />
+              </label>
+              <label>
+                Manager email
+                <input type="email" name="manager_email" placeholder="manager@ampcus.com" />
+              </label>
+              <label>
+                Office location
+                <input type="text" name="office_location" placeholder="Optional" />
+              </label>
+              <label>
+                Joining date
+                <input type="date" name="joining_date" required />
+              </label>
+            </div>
+            <label class="onboarding-checkbox">
+              <input type="checkbox" name="provision_login" />
+              Create login account (returns a one-time temp password)
+            </label>
+            <p id="onboarding-create-error" class="login-error" hidden></p>
+            <p id="onboarding-create-success" class="onboarding-success" hidden></p>
+            <div class="onboarding-form-actions">
+              <button type="button" class="chip" id="onboarding-cancel-create">Cancel</button>
+              <button type="submit" class="btn-primary" id="onboarding-submit-create">Create &amp; generate tasks</button>
+            </div>
+          </form>
+        </article>
+
+        <div class="grid-2">
+          <article class="panel">
+            <div class="panel-head">
+              <h3>Pending by category</h3>
+              <p>Incomplete tasks across active onboardings</p>
+            </div>
+            <div id="onboarding-category-bars" class="bars"></div>
+          </article>
+          <article class="panel">
+            <div class="panel-head">
+              <h3>Needs follow-up</h3>
+              <p>Day 5+ with incomplete tasks</p>
+            </div>
+            <div class="table-wrap">
+              <table class="insights-table" id="onboarding-followup-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Day</th>
+                    <th>Progress</th>
+                  </tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </article>
+        </div>
+
+        <article class="panel">
+          <div class="panel-head onboarding-panel-head">
+            <div>
+              <h3>Employee management</h3>
+              <p>View, edit, or delete employee records, tasks, and reminders</p>
+            </div>
+            <div class="onboarding-filters" role="group" aria-label="Filter employees">
+              <button type="button" class="chip onboarding-filter active" data-filter="all">All</button>
+              <button type="button" class="chip onboarding-filter" data-filter="active">In progress</button>
+              <button type="button" class="chip onboarding-filter" data-filter="complete">Complete</button>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="insights-table" id="onboarding-employees-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Email</th>
+                  <th>Dept</th>
+                  <th>Joined</th>
+                  <th>Progress</th>
+                  <th>Status</th>
+                  <th>Active</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel" id="onboarding-drilldown" hidden>
+          <div class="panel-head onboarding-panel-head">
+            <div>
+              <h3 id="onboarding-drill-title">Employee detail</h3>
+              <p id="onboarding-drill-sub">Tasks and reminder history</p>
+            </div>
+            <div class="topbar-actions">
+              <button type="button" class="chip" id="onboarding-edit-employee">Edit employee</button>
+              <button type="button" class="chip danger" id="onboarding-delete-employee">Delete employee</button>
+            </div>
+          </div>
+          <div class="onboarding-drill-meta" id="onboarding-drill-meta"></div>
+          <p class="onboarding-db-hint">Edit fields below and click <strong>Save</strong> on each row to write directly to the database.</p>
+          <div class="onboarding-drill-stack">
+            <div>
+              <h4 class="onboarding-subhead">Tasks <span class="onboarding-subhead-note">(onboarding_tasks)</span></h4>
+              <div class="table-wrap">
+                <table class="insights-table onboarding-db-table" id="onboarding-tasks-table">
+                  <thead>
+                    <tr>
+                      <th>Key</th>
+                      <th>Title</th>
+                      <th>Category</th>
+                      <th>Status</th>
+                      <th>Due</th>
+                      <th>Link</th>
+                      <th>#</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+            <div>
+              <h4 class="onboarding-subhead">Reminders <span class="onboarding-subhead-note">(onboarding_reminders)</span></h4>
+              <div class="table-wrap">
+                <table class="insights-table onboarding-db-table" id="onboarding-reminders-table">
+                  <thead>
+                    <tr>
+                      <th>Sent at</th>
+                      <th>Type</th>
+                      <th>Delivery</th>
+                      <th>Channel</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <div class="text-preview-modal onboarding-edit-modal" id="onboarding-edit-modal" hidden>
+        <div class="text-preview-backdrop" id="onboarding-edit-backdrop"></div>
+        <div class="text-preview-dialog onboarding-edit-dialog" role="dialog" aria-modal="true" aria-labelledby="onboarding-edit-title">
+          <header class="text-preview-top">
+            <h3 id="onboarding-edit-title">Edit employee</h3>
+            <button type="button" class="chip" id="onboarding-edit-close">Close</button>
+          </header>
+          <form id="onboarding-edit-form" class="onboarding-form">
+            <input type="hidden" name="email" id="onboarding-edit-email" />
+            <div class="onboarding-form-grid">
+              <label>
+                Full name
+                <input type="text" name="full_name" required />
+              </label>
+              <label>
+                Employee ID
+                <input type="text" name="employee_id" placeholder="Optional" />
+              </label>
+              <label>
+                Department
+                <select name="department" required>
+                  <option value="engineering">Engineering</option>
+                  <option value="data">Data</option>
+                  <option value="hr">HR</option>
+                  <option value="sales">Sales</option>
+                  <option value="compliance">Compliance</option>
+                  <option value="legal">Legal</option>
+                </select>
+              </label>
+              <label>
+                Role title
+                <input type="text" name="role_title" required />
+              </label>
+              <label>
+                Manager email
+                <input type="email" name="manager_email" placeholder="Optional" />
+              </label>
+              <label>
+                Office location
+                <input type="text" name="office_location" placeholder="Optional" />
+              </label>
+              <label>
+                Joining date
+                <input type="date" name="joining_date" required />
+              </label>
+              <label>
+                Onboarding status
+                <select name="onboarding_complete">
+                  <option value="false">In progress</option>
+                  <option value="true">Complete</option>
+                </select>
+              </label>
+              <label>
+                Account active
+                <select name="active">
+                  <option value="true">Active</option>
+                  <option value="false">Inactive</option>
+                </select>
+              </label>
+            </div>
+            <p id="onboarding-edit-error" class="login-error" hidden></p>
+            <div class="onboarding-form-actions">
+              <button type="button" class="chip" id="onboarding-edit-cancel">Cancel</button>
+              <button type="submit" class="btn-primary" id="onboarding-edit-save">Save changes</button>
+            </div>
+          </form>
+        </div>
+      </div>
+
       <div class="text-preview-modal" id="text-preview-modal" hidden>
         <div class="text-preview-backdrop" id="text-preview-backdrop"></div>
         <div class="text-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="text-preview-title">
@@ -828,8 +1232,13 @@
         <span>Add to project</span>
         <span class="chat-session-menu-chevron" aria-hidden="true">›</span>
       </button>
+      <div class="chat-session-menu-divider" role="separator"></div>
+      <button type="button" class="chat-session-menu-item chat-session-menu-item-danger" data-action="delete" role="menuitem">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+        <span>Delete chat</span>
+      </button>
     </div>
   </div>
-  <script src="/static/app.js?v=claude21"></script>
+  <script src="/static/app.js?v=claude38"></script>
 </body>
 </html>

@@ -114,7 +114,7 @@ def test_route_after_retrieve_empty_retries():
         route_after_retrieve(
             {"chunks": [], "retry_count": 1, "department": "it", "severity": "routine"}
         )
-        == "create_ticket"
+        == "answer_no_context"
     )
 
 

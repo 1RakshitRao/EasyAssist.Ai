@@ -241,7 +241,7 @@ function notifyItemHtml(n, { compact = false } = {}) {
   const sev = (n.severity || "") === "high" ? "sev-high" : "";
   return `<button type="button" class="notify-item${unread ? " unread" : ""}" data-notify-id="${escapeHtml(
     n.id
-  )}" data-ticket-id="${escapeHtml(n.ticket_id || "")}">
+  )}" data-ticket-id="${escapeHtml(n.ticket_id || "")}" data-notify-kind="${escapeHtml(n.kind || "")}" data-reservation-id="${escapeHtml(n.reservation_id || "")}">
     <div class="notify-item-title">
       <span class="${sev}">${escapeHtml(n.title || "Ticket")}</span>
       <span class="time">${escapeHtml(formatNotifyTime(n.created_at))}</span>
@@ -271,7 +271,11 @@ function renderNotifyPanelList() {
         }
       }
       closeNotifyPanel();
-      switchView("tickets");
+      if (btn.dataset.notifyKind === "reservation_pending") {
+        switchView("reservations");
+      } else {
+        switchView("tickets");
+      }
       refreshNotifications();
     });
   });
@@ -300,7 +304,11 @@ function renderDashNotifyList() {
           /* ignore */
         }
       }
-      switchView("tickets");
+      if (btn.dataset.notifyKind === "reservation_pending") {
+        switchView("reservations");
+      } else {
+        switchView("tickets");
+      }
       refreshNotifications();
     });
   });
@@ -510,7 +518,7 @@ function switchView(name) {
   if (name === "dashboard" && !["agent", "admin"].includes(role)) {
     name = "chat";
   }
-  if ((name === "insights" || name === "attribution" || name === "nlp-logs") && role !== "admin") {
+  if ((name === "insights" || name === "attribution" || name === "nlp-logs" || name === "onboarding" || name === "reservations") && role !== "admin") {
     name = "chat";
   }
   $$(".view").forEach((v) => v.classList.remove("active"));
@@ -519,10 +527,13 @@ function switchView(name) {
   if (view) view.classList.add("active");
   if (name === "dashboard") loadStats();
   if (name === "kb") loadKnowledgeBase();
+  if (name === "workspace") loadWorkspace();
   if (name === "tickets") loadTickets();
   if (name === "insights") loadInsights();
   if (name === "attribution") loadUserAttribution();
   if (name === "nlp-logs") loadNlpLogs();
+  if (name === "onboarding") loadOnboarding();
+  if (name === "reservations") loadReservationsAdmin();
   if (name === "chat") {
     loadSessionList();
     requestAnimationFrame(() => $("#chat-input")?.focus());
@@ -1324,6 +1335,351 @@ function addBubble(role, text, isError = false) {
     container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }
   refreshCheckpoints();
+  return el;
+}
+
+function addTicketConfirmBubble(text) {
+  const el = document.createElement("div");
+  el.className = "bubble bot ticket-confirm-bubble";
+  const body = document.createElement("p");
+  body.className = "ticket-confirm-text";
+  body.textContent = text;
+  el.appendChild(body);
+  const actions = document.createElement("div");
+  actions.className = "ticket-confirm-actions";
+  const yesBtn = document.createElement("button");
+  yesBtn.type = "button";
+  yesBtn.className = "chip ticket-confirm-yes";
+  yesBtn.textContent = "Yes, open ticket";
+  yesBtn.addEventListener("click", () => confirmPendingTicket(true));
+  const noBtn = document.createElement("button");
+  noBtn.type = "button";
+  noBtn.className = "chip ticket-confirm-no";
+  noBtn.textContent = "No thanks";
+  noBtn.addEventListener("click", () => confirmPendingTicket(false));
+  actions.append(yesBtn, noBtn);
+  el.appendChild(actions);
+  $("#chat-messages").appendChild(el);
+  const container = $("#chat-messages");
+  if (container) {
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+  }
+  refreshCheckpoints();
+  return el;
+}
+
+const RES_CAL_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function formatResCalDate(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(`${iso}T12:00:00`);
+    return d.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  } catch {
+    return iso;
+  }
+}
+
+function monthBounds(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  const first = new Date(y, m - 1, 1);
+  const last = new Date(y, m, 0);
+  return { first, last, label: first.toLocaleDateString(undefined, { month: "long", year: "numeric" }) };
+}
+
+function addDaysIso(iso, n) {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+function addReservationCalendarBubble(_text, calendarData) {
+  const el = document.createElement("div");
+  el.className = "bubble bot reservation-calendar-bubble";
+  const intro = document.createElement("p");
+  intro.className = "res-cal-intro";
+  intro.innerHTML = "<strong>Select Dates :</strong>";
+  el.appendChild(intro);
+  const widget = document.createElement("div");
+  widget.className = "res-cal-widget";
+  el.appendChild(widget);
+  mountReservationCalendar(widget, calendarData);
+  $("#chat-messages").appendChild(el);
+  const container = $("#chat-messages");
+  if (container) container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+  refreshCheckpoints();
+  return el;
+}
+
+function mountReservationCalendar(container, data) {
+  const state = {
+    data,
+    roomIdx: 0,
+    month: (data.display_month || data.from_date?.slice(0, 7) || new Date().toISOString().slice(0, 7)),
+    checkin: null,
+    checkout: null,
+    purpose: "Business travel",
+    loading: false,
+    error: "",
+  };
+
+  function dayMap(room) {
+    const m = {};
+    (room?.days || []).forEach((d) => { m[d.date] = d.status; });
+    return m;
+  }
+
+  function room() {
+    return state.data.rooms?.[state.roomIdx] || state.data.rooms?.[0];
+  }
+
+  function rangeAvailable(checkin, checkout) {
+    const r = room();
+    if (!r || !checkin || !checkout) return false;
+    const map = dayMap(r);
+    let d = checkin;
+    while (d < checkout) {
+      if ((map[d] || "available") !== "available") return false;
+      d = addDaysIso(d, 1);
+    }
+    return true;
+  }
+
+  async function loadMonth(ym) {
+    const { first, last } = monthBounds(ym);
+    const padStart = addDaysIso(first.toISOString().slice(0, 10), -7);
+    const padEnd = addDaysIso(last.toISOString().slice(0, 10), 7);
+    state.loading = true;
+    render();
+    try {
+      const q = new URLSearchParams({
+        guesthouse_id: state.data.guesthouse_id,
+        from_date: padStart,
+        to_date: padEnd,
+      });
+      const res = await api(`/reservations/calendar?${q}`);
+      if (res.ok) {
+        const fresh = await res.json();
+        state.data = { ...state.data, ...fresh, guesthouse_id: state.data.guesthouse_id };
+        state.month = ym;
+      }
+    } catch (_) {
+      state.error = "Could not refresh calendar.";
+    } finally {
+      state.loading = false;
+      render();
+    }
+  }
+
+  function onDayClick(iso, status) {
+    if (state.loading) return;
+    const today = new Date().toISOString().slice(0, 10);
+    if (iso <= today) return;
+    if (status !== "available") return;
+    if (!state.checkin || (state.checkin && state.checkout)) {
+      state.checkin = iso;
+      state.checkout = null;
+    } else if (iso <= state.checkin) {
+      state.checkin = iso;
+      state.checkout = null;
+    } else {
+      state.checkout = iso;
+      if (!rangeAvailable(state.checkin, state.checkout)) {
+        state.error = "Selected range includes unavailable dates.";
+        state.checkout = null;
+      } else {
+        state.error = "";
+      }
+    }
+    render();
+  }
+
+  async function confirmBooking() {
+    if (state.loading || _askInFlight) return;
+    const r = room();
+    if (!r || !state.checkin || !state.checkout) {
+      state.error = "Select check-in and check-out dates.";
+      render();
+      return;
+    }
+    if (!rangeAvailable(state.checkin, state.checkout)) {
+      state.error = "Selected dates are no longer available.";
+      render();
+      return;
+    }
+    state.loading = true;
+    state.error = "";
+    render();
+    try {
+      const res = await api("/reservations", {
+        method: "POST",
+        body: JSON.stringify({
+          room_id: r.room_id,
+          checkin_date: state.checkin,
+          checkout_date: state.checkout,
+          purpose: state.purpose,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        state.error = formatApiError(body, "Booking failed.");
+        state.loading = false;
+        render();
+        return;
+      }
+      container.closest(".reservation-calendar-bubble")?.remove();
+      addBubble(
+        "bot",
+        `Reservation submitted — ${body.confirmation_number || "confirmed"}.\n` +
+          `${state.data.guesthouse_name} · Room ${r.room_number}\n` +
+          `${formatResCalDate(state.checkin)} → ${formatResCalDate(state.checkout)}\n` +
+          "HR will review shortly. You'll receive email updates."
+      );
+      if (canSeeNotifications()) refreshNotifications();
+    } catch (err) {
+      state.error = err.message || "Booking failed.";
+      state.loading = false;
+      render();
+    }
+  }
+
+  function render() {
+    const r = room();
+    const map = dayMap(r);
+    const { first, last, label } = monthBounds(state.month);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const header = `<div class="res-cal-header">
+      <span class="res-cal-title">${escapeHtml(state.data.guesthouse_name || "Guesthouse")}</span>
+      <div class="res-cal-rooms">${(state.data.rooms || [])
+        .map(
+          (rm, i) =>
+            `<button type="button" class="res-cal-room-btn${i === state.roomIdx ? " active" : ""}" data-room-idx="${i}">Room ${escapeHtml(rm.room_number)}</button>`
+        )
+        .join("")}</div>
+    </div>`;
+
+    const nav = `<div class="res-cal-nav">
+      <button type="button" data-nav="prev" ${state.loading ? "disabled" : ""} aria-label="Previous month">‹</button>
+      <span class="res-cal-month-label">${escapeHtml(label)}${state.loading ? " …" : ""}</span>
+      <button type="button" data-nav="next" ${state.loading ? "disabled" : ""} aria-label="Next month">›</button>
+    </div>`;
+
+    const weekdays = `<div class="res-cal-weekdays">${RES_CAL_WEEKDAYS.map((d) => `<span>${d}</span>`).join("")}</div>`;
+
+    const cells = [];
+    const startPad = first.getDay();
+    const daysInMonth = last.getDate();
+    const totalSlots = Math.ceil((startPad + daysInMonth) / 7) * 7;
+    for (let slot = 0; slot < totalSlots; slot++) {
+      const day = slot - startPad + 1;
+      if (day < 1 || day > daysInMonth) {
+        cells.push('<div class="res-cal-day empty" aria-hidden="true"></div>');
+        continue;
+      }
+      const iso = `${state.month}-${String(day).padStart(2, "0")}`;
+      const status = map[iso] || (iso >= state.data.from_date && iso <= state.data.to_date ? "available" : "confirmed");
+      const isPast = iso <= today;
+      let cls = `res-cal-day ${status}`;
+      if (isPast) cls += " past";
+      if (iso === state.checkin || iso === state.checkout) cls += " selected";
+      if (state.checkin && state.checkout && iso > state.checkin && iso < state.checkout) cls += " in-range";
+      const disabled = isPast || status !== "available" || state.loading;
+      cells.push(
+        `<button type="button" class="${cls}" data-date="${iso}" data-status="${status}" ${disabled ? "disabled" : ""}>${day}</button>`
+      );
+    }
+
+    const legend = `<div class="res-cal-legend">
+      <span><i class="res-cal-swatch available"></i> Available</span>
+      <span><i class="res-cal-swatch pending"></i> Awaiting confirmation</span>
+      <span><i class="res-cal-swatch confirmed"></i> Confirmed / unavailable</span>
+    </div>`;
+
+    const sel = state.checkin
+      ? `<p class="res-cal-selection">Check-in: <strong>${escapeHtml(formatResCalDate(state.checkin))}</strong>` +
+        (state.checkout ? ` · Out: <strong>${escapeHtml(formatResCalDate(state.checkout))}</strong>` : " · pick check-out") +
+        `</p>`
+      : "";
+
+    const err = state.error ? `<p class="res-cal-error">${escapeHtml(state.error)}</p>` : "";
+
+    container.innerHTML =
+      header +
+      legend +
+      nav +
+      weekdays +
+      `<div class="res-cal-grid">${cells.join("")}</div>` +
+      `<div class="res-cal-footer">
+        ${sel}
+        <div class="res-cal-actions">
+          <button type="button" class="btn-primary res-cal-confirm" ${state.loading ? "disabled" : ""}>Confirm reservation</button>
+        </div>
+      </div>` +
+      err;
+
+    container.querySelectorAll(".res-cal-room-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.roomIdx = Number(btn.dataset.roomIdx) || 0;
+        state.checkin = null;
+        state.checkout = null;
+        state.error = "";
+        render();
+      });
+    });
+
+    container.querySelector('[data-nav="prev"]')?.addEventListener("click", () => {
+      const [y, m] = state.month.split("-").map(Number);
+      const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+      loadMonth(prev);
+    });
+    container.querySelector('[data-nav="next"]')?.addEventListener("click", () => {
+      const [y, m] = state.month.split("-").map(Number);
+      const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+      loadMonth(next);
+    });
+
+    container.querySelectorAll(".res-cal-day[data-date]").forEach((btn) => {
+      btn.addEventListener("click", () => onDayClick(btn.dataset.date, btn.dataset.status));
+    });
+
+    container.querySelector(".res-cal-confirm")?.addEventListener("click", confirmBooking);
+  }
+
+  render();
+}
+
+async function confirmPendingTicket(confirm) {
+  if (_askInFlight) return;
+  _askInFlight = true;
+  const label = confirm ? "Yes, open ticket" : "No thanks";
+  addBubble("user", label);
+  addBubble("bot", confirm ? "Opening ticket…" : "Got it.");
+  const thinking = $("#chat-messages").lastElementChild;
+  try {
+    const res = await api("/query", {
+      method: "POST",
+      body: JSON.stringify({
+        question: "(confirm)",
+        confirm_ticket: confirm,
+        model_preference: selectedModelPreference(),
+        session_id: getActiveSessionId(),
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.session_id) setActiveSessionId(data.session_id);
+    thinking.remove();
+    addBubble("bot", data.answer || (confirm ? "Ticket opened." : "Okay."));
+    if (data.ticket_id) loadStats();
+    loadSessionList();
+  } catch (err) {
+    thinking.remove();
+    addBubble("bot", `Error: ${err.message}`, true);
+  } finally {
+    _askInFlight = false;
+    $("#chat-input")?.focus();
+  }
 }
 
 function enterChatActive() {
@@ -1342,8 +1698,6 @@ function clearChatUi() {
     view.classList.add("chat-home");
     view.classList.remove("chat-active");
   }
-  const meta = $("#chat-meta");
-  if (meta) meta.hidden = true;
   closeCheckpointPanel();
   closeDocSidePanel?.();
   removeDocOptionCards?.();
@@ -1454,6 +1808,35 @@ function openSessionMenu(anchor, sessionId, title) {
   menu.style.left = `${left}px`;
   menu.style.top = `${top}px`;
   anchor.closest(".chat-session-item")?.classList.add("menu-open");
+}
+
+function clearSessionMeta(sessionId) {
+  const meta = readSessionMeta();
+  if (meta[sessionId]) {
+    delete meta[sessionId];
+    writeSessionMeta(meta);
+  }
+}
+
+async function deleteChatSession(sessionId, title) {
+  const label = (title || "this chat").trim();
+  const ok = confirm(
+    `Delete "${label}"?\n\nThis permanently removes the chat and its messages.`
+  );
+  if (!ok) return;
+  const res = await api(`/sessions/${encodeURIComponent(sessionId)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert(err.detail || `Delete failed (${res.status})`);
+    return;
+  }
+  clearSessionMeta(sessionId);
+  if (getActiveSessionId() === sessionId) {
+    startNewChat();
+  }
+  await loadSessionList();
 }
 
 async function renameChatSession(sessionId, currentTitle) {
@@ -1640,6 +2023,10 @@ function initChatSessions() {
     }
     if (action === "project") {
       alert("Projects are not available in this demo yet.");
+      return;
+    }
+    if (action === "delete") {
+      await deleteChatSession(sid, title);
     }
   });
   document.addEventListener("click", (e) => {
@@ -1671,72 +2058,7 @@ async function resetSession() {
   }
 }
 
-function setMetaLabels(mode) {
-  const labels = {
-    kb: {
-      dept: "Dept",
-      sev: "Severity",
-      cached: "Cached",
-      sim: "Sim",
-      esc: "Escalated",
-      ticket: "Ticket",
-      sources: "Sources",
-      model: "Model",
-    },
-    nlp: {
-      dept: "Mode",
-      sev: "Access",
-      cached: "Role",
-      sim: "Rows",
-      esc: "Block",
-      ticket: "Ticket",
-      sources: "Detail",
-      model: "Model",
-    },
-  };
-  const L = labels[mode] || labels.kb;
-  const map = [
-    ["meta-dept", L.dept],
-    ["meta-sev", L.sev],
-    ["meta-cached", L.cached],
-    ["meta-sim", L.sim],
-    ["meta-esc", L.esc],
-    ["meta-ticket", L.ticket],
-    ["meta-sources", L.sources],
-    ["meta-model", L.model],
-  ];
-  for (const [id, text] of map) {
-    const el = document.getElementById(id);
-    const bold = el?.previousElementSibling;
-    if (bold && bold.tagName === "B") bold.textContent = text;
-  }
-}
-
-function showMeta(data) {
-  const meta = $("#chat-meta");
-  if (meta) meta.hidden = false;
-  setMetaLabels("kb");
-  $("#meta-dept").textContent = data.department || "—";
-  $("#meta-sev").textContent = data.severity || "—";
-  $("#meta-model").textContent = data.model_used || "—";
-  $("#meta-cached").textContent = String(Boolean(data.cached));
-  $("#meta-sim").textContent =
-    data.cache_similarity != null ? Number(data.cache_similarity).toFixed(3) : "—";
-  $("#meta-esc").textContent = data.escalated
-    ? `yes${data.escalation_reason ? ` — ${data.escalation_reason}` : ""}`
-    : "no";
-  $("#meta-ticket").textContent = data.ticket_id || "—";
-  $("#meta-sources").textContent = (data.sources || []).join(", ") || "—";
-}
-
-function showNlpMeta(_data) {
-  // Company-data replies should not show the debug/meta strip under chat.
-  const meta = $("#chat-meta");
-  if (meta) meta.hidden = true;
-}
-
 const CHAT_MODEL_KEY = "ampcus_chat_model_preference";
-const CHAT_MODE_KEY = "ampcus_chat_answer_mode";
 const CHAT_MODEL_OPTIONS = {
   auto: { name: "Auto", effort: "Auto" },
   routine: { name: "Haiku", effort: "Low" },
@@ -1745,46 +2067,10 @@ const CHAT_MODEL_OPTIONS = {
 };
 let _askInFlight = false;
 let _chatModelValue = "auto";
-let _chatAnswerMode = "kb"; // kb | nlp
 
 function selectedModelPreference() {
   const value = (_chatModelValue || "auto").toLowerCase();
   return CHAT_MODEL_OPTIONS[value] ? value : "auto";
-}
-
-function selectedAnswerMode() {
-  return _chatAnswerMode === "nlp" ? "nlp" : "kb";
-}
-
-function applyChatAnswerMode() {
-  const mode = selectedAnswerMode();
-  const kbBtn = $("#chat-mode-kb");
-  const nlpBtn = $("#chat-mode-nlp");
-  const modelWrap = $("#chat-model-wrap");
-  const input = $("#chat-input");
-  if (kbBtn) kbBtn.setAttribute("aria-pressed", mode === "kb" ? "true" : "false");
-  if (nlpBtn) nlpBtn.setAttribute("aria-pressed", mode === "nlp" ? "true" : "false");
-  if (modelWrap) modelWrap.classList.toggle("is-nlp-hidden", mode === "nlp");
-  if (input) {
-    input.placeholder =
-      mode === "nlp"
-        ? "Ask about clients, services, locations, products, team, partnerships…"
-        : "How can I help you today?";
-  }
-  if (mode === "nlp") closeChatModelMenu();
-}
-
-function setChatAnswerMode(mode, { persist = true } = {}) {
-  _chatAnswerMode = mode === "nlp" ? "nlp" : "kb";
-  applyChatAnswerMode();
-  if (persist) localStorage.setItem(CHAT_MODE_KEY, _chatAnswerMode);
-}
-
-function initChatAnswerMode() {
-  const saved = localStorage.getItem(CHAT_MODE_KEY) || "kb";
-  setChatAnswerMode(saved, { persist: false });
-  $("#chat-mode-kb")?.addEventListener("click", () => setChatAnswerMode("kb"));
-  $("#chat-mode-nlp")?.addEventListener("click", () => setChatAnswerMode("nlp"));
 }
 
 function setChatModelPreference(value, { persist = true } = {}) {
@@ -1820,7 +2106,7 @@ function initChatModelSelect() {
 
   btn.addEventListener("click", (e) => {
     e.stopPropagation();
-    if (btn.disabled || selectedAnswerMode() === "nlp") return;
+    if (btn.disabled) return;
     const open = menu.hidden;
     menu.hidden = !open;
     btn.setAttribute("aria-expanded", open ? "true" : "false");
@@ -1858,85 +2144,60 @@ async function ask(question) {
   const modelBtn = $("#chat-model-btn");
   if (modelBtn) modelBtn.disabled = true;
   closeChatModelMenu();
-  const nlpMode = selectedAnswerMode() === "nlp";
   addBubble(
     "bot",
-    nlpMode
-      ? "Checking company data…"
-      : "Thinking… (local models can take ~30–60s)"
+    "Thinking… (local models can take ~30–60s)"
   );
   const thinking = $("#chat-messages").lastElementChild;
 
   try {
-    if (nlpMode) {
-      let data;
-      try {
-        const res = await api("/nlp-query", {
-          method: "POST",
-          body: JSON.stringify({
-            question: q,
-            session_id: getActiveSessionId(),
-          }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        data = await res.json();
-      } catch (err) {
-        if (!isStaleSessionError(err)) throw err;
-        setActiveSessionId(makeSessionId());
-        const res = await api("/nlp-query", {
-          method: "POST",
-          body: JSON.stringify({
-            question: q,
-            session_id: getActiveSessionId(),
-          }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        data = await res.json();
-      }
-      if (data.session_id) setActiveSessionId(data.session_id);
-      thinking.remove();
-      const blocked = data.allowed === false;
+    let data;
+    try {
+      const res = await api("/query", {
+        method: "POST",
+        body: JSON.stringify({
+          question: q,
+          model_preference: selectedModelPreference(),
+          session_id: getActiveSessionId(),
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      data = await res.json();
+    } catch (err) {
+      if (!isStaleSessionError(err)) throw err;
+      setActiveSessionId(makeSessionId());
+      const res = await api("/query", {
+        method: "POST",
+        body: JSON.stringify({
+          question: q,
+          model_preference: selectedModelPreference(),
+          session_id: getActiveSessionId(),
+        }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      data = await res.json();
+    }
+    if (data.session_id) setActiveSessionId(data.session_id);
+    thinking.remove();
+    const blocked = data.nlp_allowed === false || data.block_kind;
+    if (data.pending_ticket_confirmation) {
+      addTicketConfirmBubble(
+        data.answer || "Would you like me to open a support ticket for human review?"
+      );
+    } else if (data.reservation_calendar) {
+      addReservationCalendarBubble(
+        data.answer || "Select your guesthouse dates below.",
+        data.reservation_calendar
+      );
+    } else {
       addBubble(
         "bot",
         data.answer || (blocked ? "Request blocked." : "(empty answer)"),
         blocked
       );
-      showNlpMeta(data);
-      loadSessionList();
-    } else {
-      let data;
-      try {
-        const res = await api("/query", {
-          method: "POST",
-          body: JSON.stringify({
-            question: q,
-            model_preference: selectedModelPreference(),
-            session_id: getActiveSessionId(),
-          }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        data = await res.json();
-      } catch (err) {
-        if (!isStaleSessionError(err)) throw err;
-        setActiveSessionId(makeSessionId());
-        const res = await api("/query", {
-          method: "POST",
-          body: JSON.stringify({
-            question: q,
-            model_preference: selectedModelPreference(),
-            session_id: getActiveSessionId(),
-          }),
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        data = await res.json();
-      }
-      if (data.session_id) setActiveSessionId(data.session_id);
-      thinking.remove();
-      addBubble("bot", data.answer || "(empty answer)");
-      showMeta(data);
-      loadStats();
-      loadSessionList();
     }
+    if (data.intent === "helpdesk_query") loadStats();
+    loadSessionList();
   } catch (err) {
     thinking.remove();
     addBubble("bot", `Error: ${err.message}`, true);
@@ -1959,7 +2220,6 @@ $("#chat-input").addEventListener("keydown", (e) => {
   }
 });
 
-initChatAnswerMode();
 initChatModelSelect();
 initChatSessions();
 initChatCheckpoints();
@@ -3351,6 +3611,1434 @@ function renderKbPanel() {
     renderKbPanel();
   });
 }
+
+let _onboardingFilter = "all";
+let _onboardingSelectedEmail = "";
+
+const WORKSPACE_CATEGORY_LABELS = {
+  identity: "Identity & access",
+  payroll: "Payroll",
+  benefits: "Benefits",
+  documents: "Documents",
+  apps: "Apps & tools",
+};
+
+const WORKSPACE_CATEGORY_ORDER = ["identity", "payroll", "benefits", "documents", "apps"];
+
+function workspaceTicketStatusLabel(status) {
+  const s = String(status || "open").toLowerCase();
+  if (s === "assigned") return "In progress";
+  if (s === "resolved") return "Resolved";
+  return "Open";
+}
+
+function workspaceTicketStatusClass(status) {
+  const s = String(status || "open").toLowerCase();
+  if (s === "assigned") return "assigned";
+  if (s === "resolved") return "resolved";
+  return "open";
+}
+
+function workspaceFormatDate(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10);
+  return d.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
+}
+
+function renderWorkspaceOnboarding(data) {
+  const body = $("#workspace-onboarding-body");
+  const meta = $("#workspace-onboarding-meta");
+  const badge = $("#workspace-onboarding-badge");
+  const track = $("#workspace-onboarding-progress");
+  const fill = $("#workspace-onboarding-progress-fill");
+  if (!body) return;
+
+  const total = Number(data?.total || 0);
+  const completed = Number(data?.completed || 0);
+  const pct = Number(data?.percentage || 0);
+
+  if (total === 0) {
+    if (meta) meta.textContent = "No onboarding checklist assigned to your account yet.";
+    if (badge) badge.hidden = true;
+    if (track) track.hidden = true;
+    body.innerHTML =
+      '<p class="empty workspace-empty">When HR adds you to onboarding, your first-week tasks will appear here.</p>';
+    return;
+  }
+
+  const pending = total - completed;
+  if (meta) {
+    meta.textContent =
+      pending > 0
+        ? `${pending} task${pending === 1 ? "" : "s"} remaining · ${completed} of ${total} complete`
+        : "All onboarding tasks complete — great work!";
+  }
+  if (badge) {
+    badge.hidden = false;
+    badge.textContent = `${Math.round(pct)}%`;
+    badge.classList.toggle("done", pct >= 100);
+  }
+  if (track) track.hidden = false;
+  if (fill) fill.style.width = `${Math.min(100, pct)}%`;
+
+  const grouped = data.tasks_by_category || {};
+  const categories = WORKSPACE_CATEGORY_ORDER.filter((c) => grouped[c]?.length).concat(
+    Object.keys(grouped).filter((c) => !WORKSPACE_CATEGORY_ORDER.includes(c))
+  );
+
+  body.innerHTML = categories
+    .map((cat) => {
+      const tasks = grouped[cat] || [];
+      const label = WORKSPACE_CATEGORY_LABELS[cat] || cat;
+      const items = tasks
+        .map((t) => {
+          const done = t.status === "completed";
+          const skipped = t.status === "skipped";
+          const due = t.due_date ? `<span class="workspace-task-due">Due ${escapeHtml(workspaceFormatDate(t.due_date))}</span>` : "";
+          const link = t.link_url
+            ? `<a class="workspace-task-link" href="${escapeHtml(t.link_url)}" target="_blank" rel="noopener noreferrer">Open link</a>`
+            : "";
+          return `<li class="workspace-task${done ? " is-done" : ""}${skipped ? " is-skipped" : ""}" data-task-id="${escapeHtml(t.id)}">
+            <label class="workspace-task-check">
+              <input type="checkbox" class="workspace-task-toggle" data-task-id="${escapeHtml(t.id)}" ${done ? "checked disabled" : ""} ${skipped ? "disabled" : ""} />
+              <span class="workspace-task-title">${escapeHtml(t.task_title)}</span>
+            </label>
+            ${due}${link}
+          </li>`;
+        })
+        .join("");
+      return `<section class="workspace-task-group">
+        <h4>${escapeHtml(label)}</h4>
+        <ul class="workspace-task-list">${items}</ul>
+      </section>`;
+    })
+    .join("");
+
+  body.querySelectorAll(".workspace-task-toggle").forEach((input) => {
+    input.addEventListener("change", async () => {
+      if (!input.checked) return;
+      const taskId = input.dataset.taskId;
+      input.disabled = true;
+      try {
+        const res = await api(`/me/tasks/${taskId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "completed" }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(formatApiError(err, `HTTP ${res.status}`));
+        }
+        await loadWorkspace();
+      } catch (e) {
+        input.disabled = false;
+        input.checked = false;
+        alert(e.message || "Could not update task.");
+      }
+    });
+  });
+}
+
+function renderWorkspaceTickets(tickets) {
+  const body = $("#workspace-tickets-body");
+  const badge = $("#workspace-tickets-badge");
+  if (!body) return;
+
+  const list = Array.isArray(tickets) ? tickets : [];
+  if (badge) badge.textContent = `${list.length} open`;
+
+  if (!list.length) {
+    body.innerHTML =
+      '<p class="empty workspace-empty">No open tickets. Ask a question in chat — if we cannot answer, a ticket is created automatically.</p>';
+    return;
+  }
+
+  body.innerHTML = `<ul class="workspace-ticket-list">${list
+    .map((t) => {
+      const status = workspaceTicketStatusLabel(t.status);
+      const statusClass = workspaceTicketStatusClass(t.status);
+      const type = t.ticket_type === "escalation" ? "Escalation" : "Helpdesk";
+      const dept = t.assigned_department || t.department || "—";
+      const notes = t.admin_notes
+        ? `<p class="workspace-ticket-notes"><strong>Update:</strong> ${escapeHtml(t.admin_notes)}</p>`
+        : "";
+      return `<li class="workspace-ticket">
+        <div class="workspace-ticket-top">
+          <span class="workspace-ticket-status ${statusClass}">${escapeHtml(status)}</span>
+          <span class="workspace-ticket-type">${escapeHtml(type)}</span>
+          <time class="workspace-ticket-date">${escapeHtml(workspaceFormatDate(t.created_at))}</time>
+        </div>
+        <p class="workspace-ticket-question">${escapeHtml(t.question || "—")}</p>
+        <p class="workspace-ticket-meta">Department: <span class="mono">${escapeHtml(dept)}</span></p>
+        ${notes}
+      </li>`;
+    })
+    .join("")}</ul>`;
+}
+
+function renderWorkspaceSummary(tasksData, tickets, reservations = []) {
+  const wrap = $("#workspace-summary");
+  if (!wrap) return;
+
+  const taskTotal = Number(tasksData?.total || 0);
+  const taskPending = taskTotal ? taskTotal - Number(tasksData?.completed || 0) : 0;
+  const openTickets = Array.isArray(tickets) ? tickets.length : 0;
+
+  wrap.innerHTML = `<div class="workspace-kpi-row">
+    <article class="kpi-card">
+      <p class="kpi-label">Onboarding tasks</p>
+      <p class="kpi-value">${taskTotal ? `${taskPending} pending` : "—"}</p>
+    </article>
+    <article class="kpi-card">
+      <p class="kpi-label">Open tickets</p>
+      <p class="kpi-value">${openTickets}</p>
+    </article>
+    <article class="kpi-card muted-card">
+      <p class="kpi-label">Guesthouse stays</p>
+      <p class="kpi-value">${Array.isArray(reservations) ? reservations.length : "—"}</p>
+    </article>
+  </div>`;
+}
+
+function renderWorkspaceReservations(list) {
+  const body = $("#workspace-reservations-body");
+  const badge = $("#workspace-reservations-badge");
+  if (!body) return;
+  const rows = Array.isArray(list) ? list : [];
+  if (badge) badge.textContent = `${rows.length} upcoming`;
+  if (!rows.length) {
+    body.innerHTML =
+      '<p class="empty workspace-empty">No upcoming reservations. Ask in chat: "book the guesthouse next week".</p>';
+    return;
+  }
+  body.innerHTML = `<ul class="workspace-ticket-list">${rows
+    .map((r) => {
+      const status = (r.status || "").replace(/_/g, " ");
+      return `<li class="workspace-ticket" data-reservation-id="${escapeHtml(r.id)}">
+        <div class="workspace-ticket-top">
+          <span class="workspace-ticket-status">${escapeHtml(status)}</span>
+          <span class="mono">${escapeHtml(r.confirmation_number || "")}</span>
+          <time class="workspace-ticket-date">${escapeHtml(workspaceFormatDate(r.checkin_date))}</time>
+        </div>
+        <p class="workspace-ticket-question">${escapeHtml(r.guesthouse_name || "Guesthouse")} — Room ${escapeHtml(r.room_number || "?")}</p>
+        <p class="workspace-ticket-meta">${escapeHtml(workspaceFormatDate(r.checkin_date))} → ${escapeHtml(workspaceFormatDate(r.checkout_date))}</p>
+        <button type="button" class="chip danger workspace-res-cancel" data-id="${escapeHtml(r.id)}">Cancel</button>
+      </li>`;
+    })
+    .join("")}</ul>`;
+  body.querySelectorAll(".workspace-res-cancel").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const id = btn.getAttribute("data-id");
+      if (!id || !confirm("Cancel this reservation?")) return;
+      const res = await api(`/reservations/${encodeURIComponent(id)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        alert(formatApiError(err, "Could not cancel reservation."));
+        return;
+      }
+      loadWorkspace();
+    });
+  });
+}
+
+async function loadWorkspace() {
+  const onboardingBody = $("#workspace-onboarding-body");
+  const ticketsBody = $("#workspace-tickets-body");
+  const reservationsBody = $("#workspace-reservations-body");
+  if (onboardingBody) onboardingBody.innerHTML = '<p class="empty">Loading checklist…</p>';
+  if (ticketsBody) ticketsBody.innerHTML = '<p class="empty">Loading tickets…</p>';
+  if (reservationsBody) reservationsBody.innerHTML = '<p class="empty">Loading reservations…</p>';
+
+  const [tasksRes, ticketsRes, reservationsRes] = await Promise.all([
+    api("/me/tasks").catch(() => null),
+    api("/me/tickets").catch(() => null),
+    api("/reservations/my").catch(() => null),
+  ]);
+
+  let tasksData = { total: 0, completed: 0, percentage: 0, tasks_by_category: {} };
+  if (tasksRes?.ok) {
+    tasksData = await tasksRes.json();
+  } else if (tasksRes && !tasksRes.ok) {
+    const err = await tasksRes.json().catch(() => ({}));
+    if (onboardingBody) {
+      onboardingBody.innerHTML = `<p class="empty workspace-empty">${escapeHtml(formatApiError(err, "Could not load checklist."))}</p>`;
+    }
+  }
+
+  let tickets = [];
+  if (ticketsRes?.ok) {
+    tickets = await ticketsRes.json();
+  } else if (ticketsRes && !ticketsRes.ok) {
+    const err = await ticketsRes.json().catch(() => ({}));
+    if (ticketsBody) {
+      ticketsBody.innerHTML = `<p class="empty workspace-empty">${escapeHtml(formatApiError(err, "Could not load tickets."))}</p>`;
+    }
+  }
+
+  let reservations = [];
+  if (reservationsRes?.ok) {
+    reservations = await reservationsRes.json();
+  } else if (reservationsRes && !reservationsRes.ok) {
+    const err = await reservationsRes.json().catch(() => ({}));
+    if (reservationsBody) {
+      reservationsBody.innerHTML = `<p class="empty workspace-empty">${escapeHtml(formatApiError(err, "Could not load reservations."))}</p>`;
+    }
+  }
+
+  renderWorkspaceSummary(tasksData, tickets, reservations);
+  renderWorkspaceOnboarding(tasksData);
+  renderWorkspaceTickets(tickets);
+  renderWorkspaceReservations(reservations);
+}
+
+$("#refresh-workspace")?.addEventListener("click", () => loadWorkspace());
+
+function employeeDisplayName(email) {
+  if (!email) return "—";
+  const local = String(email).split("@")[0] || email;
+  return local
+    .replace(/[._-]+/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+function renderResAdminTable(container, rows, mode) {
+  if (!container) return;
+  if (!rows.length) {
+    container.innerHTML = `<p class="empty">${mode === "pending" ? "No pending reservations." : "No approved reservations."}</p>`;
+    return;
+  }
+  if (mode === "pending") {
+    container.innerHTML = `<table class="res-admin-table"><thead><tr>
+      <th>Confirmation</th><th>Employee</th><th>Property</th><th>Check-in</th><th>Check-out</th><th></th>
+    </tr></thead><tbody>${rows
+      .map(
+        (r) => `<tr>
+        <td class="mono">${escapeHtml(r.confirmation_number || "")}</td>
+        <td>
+          <span class="res-admin-name">${escapeHtml(employeeDisplayName(r.employee_email))}</span>
+          <span class="res-admin-email">${escapeHtml(r.employee_email || "")}</span>
+        </td>
+        <td>${escapeHtml(r.guesthouse_name || "")} · Room ${escapeHtml(r.room_number || "")}</td>
+        <td class="mono">${escapeHtml(r.checkin_date || "")}</td>
+        <td class="mono">${escapeHtml(r.checkout_date || "")}</td>
+        <td class="res-admin-actions">
+          <button type="button" class="chip res-approve" data-id="${escapeHtml(r.id)}">Approve</button>
+          <button type="button" class="chip danger res-reject" data-id="${escapeHtml(r.id)}">Reject</button>
+        </td>
+      </tr>`
+      )
+      .join("")}</tbody></table>`;
+    container.querySelectorAll(".res-approve").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-id");
+        const r = await api(`/admin/reservations/${encodeURIComponent(id)}/approve`, { method: "POST" });
+        if (!r.ok) alert("Approve failed");
+        else loadReservationsAdmin();
+      });
+    });
+    container.querySelectorAll(".res-reject").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const id = btn.getAttribute("data-id");
+        const reason = prompt("Rejection reason:") || "Not approved";
+        const r = await api(`/admin/reservations/${encodeURIComponent(id)}/reject`, {
+          method: "POST",
+          body: JSON.stringify({ reason }),
+        });
+        if (!r.ok) alert("Reject failed");
+        else loadReservationsAdmin();
+      });
+    });
+    return;
+  }
+
+  container.innerHTML = `<table class="res-admin-table"><thead><tr>
+    <th>Employee</th><th>Property</th><th>Check-in</th><th>Check-out</th><th>Confirmation</th>
+  </tr></thead><tbody>${rows
+    .map(
+      (r) => `<tr data-res-id="${escapeHtml(r.id)}" class="res-admin-approved-row">
+      <td>
+        <span class="res-admin-name">${escapeHtml(employeeDisplayName(r.employee_email))}</span>
+        <span class="res-admin-email">${escapeHtml(r.employee_email || "")}</span>
+      </td>
+      <td>${escapeHtml(r.guesthouse_name || "")} · Room ${escapeHtml(r.room_number || "")}</td>
+      <td class="mono">${escapeHtml(r.checkin_date || "")}</td>
+      <td class="mono">${escapeHtml(r.checkout_date || "")}</td>
+      <td class="mono">${escapeHtml(r.confirmation_number || "")}</td>
+    </tr>`
+    )
+    .join("")}</tbody></table>`;
+}
+
+let _adminCalApi = null;
+
+function mountAdminReservationCalendar(hostEl, guesthouses) {
+  if (!hostEl) return;
+  const widget = document.createElement("div");
+  widget.className = "res-cal-widget";
+  hostEl.innerHTML = "";
+  hostEl.appendChild(widget);
+
+  const ghSelect = $("#res-admin-gh-select");
+  const emailInput = $("#res-admin-employee-email");
+  const detailEl = $("#res-admin-cal-detail");
+  const errEl = $("#res-admin-cal-error");
+
+  const state = {
+    guesthouses: guesthouses || [],
+    guesthouseId: guesthouses?.[0]?.id || "",
+    data: null,
+    roomIdx: 0,
+    month: new Date().toISOString().slice(0, 7),
+    checkin: null,
+    checkout: null,
+    selectedReservation: null,
+    loading: false,
+    error: "",
+  };
+
+  function showError(msg) {
+    state.error = msg || "";
+    if (errEl) {
+      errEl.textContent = state.error;
+      errEl.hidden = !state.error;
+    }
+  }
+
+  function dayMap(room) {
+    const m = {};
+    (room?.days || []).forEach((d) => { m[d.date] = d; });
+    return m;
+  }
+
+  function room() {
+    return state.data?.rooms?.[state.roomIdx] || state.data?.rooms?.[0];
+  }
+
+  function rangeAvailable(checkin, checkout) {
+    const r = room();
+    if (!r || !checkin || !checkout) return false;
+    const map = dayMap(r);
+    let d = checkin;
+    while (d < checkout) {
+      const entry = map[d];
+      if (!entry || entry.status !== "available") return false;
+      d = addDaysIso(d, 1);
+    }
+    return true;
+  }
+
+  function updateDetail() {
+    if (!detailEl) return;
+    const sel = state.selectedReservation;
+    if (!sel) {
+      detailEl.hidden = true;
+      detailEl.innerHTML = "";
+      return;
+    }
+    detailEl.hidden = false;
+    detailEl.innerHTML =
+      `<strong>${escapeHtml(employeeDisplayName(sel.employee_email))}</strong> · ${escapeHtml(sel.employee_email || "")}<br>` +
+      `${escapeHtml(sel.confirmation_number || sel.reservation_id || "")} · ` +
+      `${escapeHtml(sel.checkin_date || "")} → ${escapeHtml(sel.checkout_date || "")} · ` +
+      `<span class="mono">${escapeHtml(sel.reservation_status || "")}</span>`;
+  }
+
+  async function loadMonth(ym) {
+    if (!state.guesthouseId) return;
+    const { first, last } = monthBounds(ym);
+    const padStart = addDaysIso(first.toISOString().slice(0, 10), -7);
+    const padEnd = addDaysIso(last.toISOString().slice(0, 10), 7);
+    state.loading = true;
+    showError("");
+    render();
+    try {
+      const q = new URLSearchParams({
+        guesthouse_id: state.guesthouseId,
+        from_date: padStart,
+        to_date: padEnd,
+      });
+      const res = await api(`/admin/reservations/calendar/widget?${q}`);
+      if (res.ok) {
+        const fresh = await res.json();
+        state.data = { ...fresh, guesthouse_id: state.guesthouseId };
+        state.month = ym;
+      } else {
+        const err = await res.json().catch(() => ({}));
+        showError(formatApiError(err, "Could not load calendar."));
+      }
+    } catch (_) {
+      showError("Could not refresh calendar.");
+    } finally {
+      state.loading = false;
+      render();
+    }
+  }
+
+  function onDayClick(iso, dayEntry) {
+    if (state.loading) return;
+    const status = dayEntry?.status || "available";
+    if (status !== "available") {
+      if (dayEntry?.reservation_id) {
+        state.selectedReservation = {
+          reservation_id: dayEntry.reservation_id,
+          employee_email: dayEntry.employee_email,
+          confirmation_number: dayEntry.confirmation_number,
+          reservation_status: dayEntry.reservation_status,
+          checkin_date: dayEntry.checkin_date,
+          checkout_date: dayEntry.checkout_date,
+        };
+        state.checkin = dayEntry.checkin_date || null;
+        state.checkout = dayEntry.checkout_date || null;
+        if (emailInput && dayEntry.employee_email) {
+          emailInput.value = dayEntry.employee_email;
+        }
+        updateDetail();
+        render();
+      }
+      return;
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    if (iso < today) return;
+    state.selectedReservation = null;
+    updateDetail();
+    if (!state.checkin || (state.checkin && state.checkout)) {
+      state.checkin = iso;
+      state.checkout = null;
+    } else if (iso <= state.checkin) {
+      state.checkin = iso;
+      state.checkout = null;
+    } else {
+      state.checkout = iso;
+      if (!rangeAvailable(state.checkin, state.checkout)) {
+        showError("Selected range includes unavailable dates.");
+        state.checkout = null;
+      } else {
+        showError("");
+      }
+    }
+    render();
+  }
+
+  function render() {
+    if (!state.data) {
+      widget.innerHTML = '<p class="empty">Select a property to load the calendar.</p>';
+      return;
+    }
+    const r = room();
+    const map = dayMap(r);
+    const { first, last, label } = monthBounds(state.month);
+    const today = new Date().toISOString().slice(0, 10);
+
+    const header = `<div class="res-cal-header">
+      <span class="res-cal-title">${escapeHtml(state.data.guesthouse_name || "Guesthouse")}</span>
+      <div class="res-cal-rooms">${(state.data.rooms || [])
+        .map(
+          (rm, i) =>
+            `<button type="button" class="res-cal-room-btn${i === state.roomIdx ? " active" : ""}" data-room-idx="${i}">Room ${escapeHtml(rm.room_number)}</button>`
+        )
+        .join("")}</div>
+    </div>`;
+
+    const legend = `<div class="res-cal-legend">
+      <span><i class="res-cal-swatch available"></i> Available</span>
+      <span><i class="res-cal-swatch pending"></i> Awaiting confirmation</span>
+      <span><i class="res-cal-swatch confirmed"></i> Confirmed / unavailable</span>
+    </div>`;
+
+    const nav = `<div class="res-cal-nav">
+      <button type="button" data-nav="prev" ${state.loading ? "disabled" : ""} aria-label="Previous month">‹</button>
+      <span class="res-cal-month-label">${escapeHtml(label)}${state.loading ? " …" : ""}</span>
+      <button type="button" data-nav="next" ${state.loading ? "disabled" : ""} aria-label="Next month">›</button>
+    </div>`;
+
+    const weekdays = `<div class="res-cal-weekdays">${RES_CAL_WEEKDAYS.map((d) => `<span>${d}</span>`).join("")}</div>`;
+
+    const cells = [];
+    const startPad = first.getDay();
+    const daysInMonth = last.getDate();
+    const totalSlots = Math.ceil((startPad + daysInMonth) / 7) * 7;
+    for (let slot = 0; slot < totalSlots; slot++) {
+      const day = slot - startPad + 1;
+      if (day < 1 || day > daysInMonth) {
+        cells.push('<div class="res-cal-day empty" aria-hidden="true"></div>');
+        continue;
+      }
+      const iso = `${state.month}-${String(day).padStart(2, "0")}`;
+      const entry = map[iso] || { date: iso, status: "available" };
+      const status = entry.status || "available";
+      const isPast = iso < today;
+      let cls = `res-cal-day ${status}`;
+      if (isPast) cls += " past";
+      if (iso === state.checkin || iso === state.checkout) cls += " selected";
+      if (state.checkin && state.checkout && iso > state.checkin && iso < state.checkout) cls += " in-range";
+      const disabled = state.loading || (status === "available" && isPast);
+      cells.push(
+        `<button type="button" class="${cls}" data-date="${iso}" ${disabled ? "disabled" : ""}>${day}</button>`
+      );
+    }
+
+    const sel = state.checkin
+      ? `<p class="res-cal-selection">Check-in: <strong>${escapeHtml(formatResCalDate(state.checkin))}</strong>` +
+        (state.checkout ? ` · Out: <strong>${escapeHtml(formatResCalDate(state.checkout))}</strong>` : " · pick check-out") +
+        `</p>`
+      : "";
+
+    widget.innerHTML =
+      header +
+      legend +
+      nav +
+      weekdays +
+      `<div class="res-cal-grid">${cells.join("")}</div>` +
+      (sel ? `<div class="res-cal-footer">${sel}</div>` : "");
+
+    widget.querySelectorAll(".res-cal-room-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.roomIdx = Number(btn.dataset.roomIdx) || 0;
+        state.checkin = null;
+        state.checkout = null;
+        state.selectedReservation = null;
+        showError("");
+        updateDetail();
+        render();
+      });
+    });
+
+    widget.querySelector('[data-nav="prev"]')?.addEventListener("click", () => {
+      const [y, m] = state.month.split("-").map(Number);
+      const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+      loadMonth(prev);
+    });
+    widget.querySelector('[data-nav="next"]')?.addEventListener("click", () => {
+      const [y, m] = state.month.split("-").map(Number);
+      const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+      loadMonth(next);
+    });
+
+    widget.querySelectorAll(".res-cal-day[data-date]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const iso = btn.dataset.date;
+        onDayClick(iso, map[iso]);
+      });
+    });
+  }
+
+  async function reserveForEmployee() {
+    const r = room();
+    const email = emailInput?.value?.trim();
+    if (!r || !email || !state.checkin || !state.checkout) {
+      showError("Enter employee email and select check-in / check-out dates.");
+      return;
+    }
+    if (!rangeAvailable(state.checkin, state.checkout)) {
+      showError("Selected dates are not available.");
+      return;
+    }
+    state.loading = true;
+    showError("");
+    render();
+    try {
+      const res = await api("/admin/reservations", {
+        method: "POST",
+        body: JSON.stringify({
+          employee_email: email,
+          room_id: r.room_id,
+          checkin_date: state.checkin,
+          checkout_date: state.checkout,
+          purpose: "Business travel",
+          auto_confirm: true,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showError(formatApiError(body, "Could not create reservation."));
+        state.loading = false;
+        render();
+        return;
+      }
+      state.checkin = null;
+      state.checkout = null;
+      state.selectedReservation = null;
+      updateDetail();
+      await loadReservationsAdmin();
+    } catch (err) {
+      showError(err.message || "Could not create reservation.");
+      state.loading = false;
+      render();
+    }
+  }
+
+  async function modifySelected() {
+    const id = state.selectedReservation?.reservation_id;
+    if (!id || !state.checkin || !state.checkout) {
+      showError("Select a reservation and new check-in / check-out dates.");
+      return;
+    }
+    state.loading = true;
+    showError("");
+    render();
+    try {
+      const res = await api(`/admin/reservations/${encodeURIComponent(id)}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          checkin_date: state.checkin,
+          checkout_date: state.checkout,
+        }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showError(formatApiError(body, "Could not modify reservation."));
+        state.loading = false;
+        render();
+        return;
+      }
+      state.selectedReservation = null;
+      updateDetail();
+      await loadReservationsAdmin();
+    } catch (err) {
+      showError(err.message || "Could not modify reservation.");
+      state.loading = false;
+      render();
+    }
+  }
+
+  async function cancelSelected() {
+    const id = state.selectedReservation?.reservation_id;
+    if (!id) {
+      showError("Click a booked date to select a reservation to cancel.");
+      return;
+    }
+    if (!confirm("Cancel this reservation and free the dates?")) return;
+    state.loading = true;
+    showError("");
+    render();
+    try {
+      const res = await api(`/admin/reservations/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        showError(formatApiError(body, "Could not cancel reservation."));
+        state.loading = false;
+        render();
+        return;
+      }
+      state.selectedReservation = null;
+      state.checkin = null;
+      state.checkout = null;
+      updateDetail();
+      await loadReservationsAdmin();
+    } catch (err) {
+      showError(err.message || "Could not cancel reservation.");
+      state.loading = false;
+      render();
+    }
+  }
+
+  async function approveSelected() {
+    const id = state.selectedReservation?.reservation_id;
+    if (!id) {
+      showError("Click a pending reservation on the calendar.");
+      return;
+    }
+    const res = await api(`/admin/reservations/${encodeURIComponent(id)}/approve`, { method: "POST" });
+    if (!res.ok) showError("Approve failed.");
+    else await loadReservationsAdmin();
+  }
+
+  async function rejectSelected() {
+    const id = state.selectedReservation?.reservation_id;
+    if (!id) {
+      showError("Click a pending reservation on the calendar.");
+      return;
+    }
+    const reason = prompt("Rejection reason:") || "Not approved";
+    const res = await api(`/admin/reservations/${encodeURIComponent(id)}/reject`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+    if (!res.ok) showError("Reject failed.");
+    else await loadReservationsAdmin();
+  }
+
+  if (ghSelect) {
+    ghSelect.innerHTML = state.guesthouses
+      .map((g) => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`)
+      .join("");
+    ghSelect.value = state.guesthouseId;
+    ghSelect.onchange = () => {
+      state.guesthouseId = ghSelect.value;
+      state.roomIdx = 0;
+      state.checkin = null;
+      state.checkout = null;
+      state.selectedReservation = null;
+      updateDetail();
+      loadMonth(state.month);
+    };
+  }
+
+  $("#res-admin-cal-reserve")?.addEventListener("click", reserveForEmployee);
+  $("#res-admin-cal-modify")?.addEventListener("click", modifySelected);
+  $("#res-admin-cal-cancel")?.addEventListener("click", cancelSelected);
+  $("#res-admin-cal-approve")?.addEventListener("click", approveSelected);
+  $("#res-admin-cal-reject")?.addEventListener("click", rejectSelected);
+
+  _adminCalApi = {
+    reload: () => loadMonth(state.month),
+    setGuesthouse: (id) => {
+      state.guesthouseId = id;
+      if (ghSelect) ghSelect.value = id;
+      loadMonth(state.month);
+    },
+  };
+
+  if (state.guesthouseId) loadMonth(state.month);
+  else render();
+}
+
+async function loadReservationsAdmin() {
+  const pendingBody = $("#reservations-pending-body");
+  const approvedBody = $("#reservations-approved-body");
+  if (pendingBody) pendingBody.innerHTML = '<p class="empty">Loading…</p>';
+  if (approvedBody) approvedBody.innerHTML = '<p class="empty">Loading…</p>';
+
+  const [pendingRes, approvedRes, ghRes] = await Promise.all([
+    api("/admin/reservations/pending"),
+    api("/admin/reservations?status=confirmed"),
+    api("/admin/guesthouses"),
+  ]);
+
+  if (!pendingRes.ok) {
+    const err = await pendingRes.json().catch(() => ({}));
+    if (pendingBody) {
+      pendingBody.innerHTML = `<p class="empty">${escapeHtml(formatApiError(err, "Could not load pending reservations."))}</p>`;
+    }
+  } else {
+    renderResAdminTable(pendingBody, await pendingRes.json(), "pending");
+  }
+
+  if (!approvedRes.ok) {
+    const err = await approvedRes.json().catch(() => ({}));
+    if (approvedBody) {
+      approvedBody.innerHTML = `<p class="empty">${escapeHtml(formatApiError(err, "Could not load approved reservations."))}</p>`;
+    }
+  } else {
+    const approved = (await approvedRes.json()).sort(
+      (a, b) => String(a.checkin_date).localeCompare(String(b.checkin_date))
+    );
+    renderResAdminTable(approvedBody, approved, "approved");
+  }
+
+  const host = $("#res-admin-cal-host");
+  if (ghRes.ok && host) {
+    const guesthouses = await ghRes.json();
+    if (!_adminCalApi) {
+      mountAdminReservationCalendar(host, guesthouses);
+    } else {
+      _adminCalApi.reload();
+    }
+  }
+}
+
+$("#refresh-reservations-admin")?.addEventListener("click", () => loadReservationsAdmin());
+
+const ONBOARDING_CATEGORY_COLORS = {
+  identity: "#6c4dff",
+  payroll: "#3dcfb0",
+  documents: "#f0b429",
+  benefits: "#e2556f",
+  apps: "#2a9f84",
+};
+
+function onboardingProgressCell(completed, total, pct) {
+  const p = pct != null ? Number(pct) : total ? Math.round((100 * completed) / total) : 0;
+  return `<div class="onboarding-progress-cell">
+    <div class="onboarding-progress-track"><div class="onboarding-progress-fill" style="width:${Math.min(100, p)}%"></div></div>
+    <span class="mono">${completed}/${total} (${p}%)</span>
+  </div>`;
+}
+
+function onboardingStatusTag(complete) {
+  if (complete) return '<span class="tag">Complete</span>';
+  return '<span class="tag cached">In progress</span>';
+}
+
+function onboardingTaskStatusTag(status) {
+  const s = (status || "pending").toLowerCase();
+  if (s === "completed") return '<span class="tag">Done</span>';
+  if (s === "skipped") return '<span class="tag unknown">Skipped</span>';
+  return '<span class="tag cached">Pending</span>';
+}
+
+function onboardingActiveTag(active) {
+  if (active) return '<span class="tag">Active</span>';
+  return '<span class="tag unknown">Inactive</span>';
+}
+
+function onboardingActionButtons(email) {
+  return `<div class="onboarding-row-actions">
+    <button type="button" class="chip onboarding-edit-btn" data-email="${escapeHtml(email)}">Edit</button>
+    <button type="button" class="chip danger onboarding-delete-btn" data-email="${escapeHtml(email)}">Delete</button>
+  </div>`;
+}
+
+function bindOnboardingEmployeeActions(container) {
+  if (!container) return;
+  container.querySelectorAll(".onboarding-edit-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      openOnboardingEditModal(btn.dataset.email);
+    });
+  });
+  container.querySelectorAll(".onboarding-delete-btn").forEach((btn) => {
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      deleteOnboardingEmployee(btn.dataset.email);
+    });
+  });
+  container.querySelectorAll(".onboarding-row").forEach((row) => {
+    row.addEventListener("click", () => loadOnboardingEmployeeDetail(row.dataset.email));
+  });
+}
+
+function bindOnboardingTaskActions(container, email) {
+  if (!container) return;
+  container.querySelectorAll(".onboarding-task-save").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const row = btn.closest("tr");
+      const taskId = row?.dataset.taskId;
+      if (!taskId) return;
+      const payload = {
+        task_title: row.querySelector('[data-field="task_title"]')?.value?.trim(),
+        category: row.querySelector('[data-field="category"]')?.value,
+        status: row.querySelector('[data-field="status"]')?.value,
+        due_date: row.querySelector('[data-field="due_date"]')?.value || null,
+        link_url: row.querySelector('[data-field="link_url"]')?.value?.trim() || null,
+        sort_order: parseInt(row.querySelector('[data-field="sort_order"]')?.value || "0", 10),
+      };
+      try {
+        const res = await api(`/admin/tasks/${encodeURIComponent(taskId)}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(formatApiError(data, "Could not save task"));
+        btn.textContent = "Saved";
+        setTimeout(() => {
+          btn.textContent = "Save";
+        }, 1200);
+        await loadOnboardingEmployeeDetail(email);
+        loadOnboarding();
+      } catch (ex) {
+        alert(ex.message || "Save failed");
+      }
+    });
+  });
+  container.querySelectorAll(".onboarding-task-delete").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (!confirm("Delete this task permanently?")) return;
+      try {
+        const res = await api(`/admin/tasks/${encodeURIComponent(btn.dataset.taskId)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok && res.status !== 204) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(formatApiError(data, "Could not delete task"));
+        }
+        await loadOnboardingEmployeeDetail(email);
+        loadOnboarding();
+      } catch (ex) {
+        alert(ex.message || "Delete failed");
+      }
+    });
+  });
+}
+
+function bindOnboardingReminderActions(container, email) {
+  if (!container) return;
+  container.querySelectorAll(".onboarding-reminder-save").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const row = btn.closest("tr");
+      const reminderId = row?.dataset.reminderId;
+      if (!reminderId) return;
+      const sentRaw = row.querySelector('[data-field="sent_at"]')?.value?.trim() || "";
+      const payload = {
+        reminder_type: row.querySelector('[data-field="reminder_type"]')?.value?.trim(),
+        delivery_status: row.querySelector('[data-field="delivery_status"]')?.value,
+        channel: row.querySelector('[data-field="channel"]')?.value,
+      };
+      if (sentRaw) payload.sent_at = sentRaw.includes("T") ? sentRaw : sentRaw.replace(" ", "T");
+      try {
+        const res = await api(`/admin/reminders/${encodeURIComponent(reminderId)}`, {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(formatApiError(data, "Could not save reminder"));
+        btn.textContent = "Saved";
+        setTimeout(() => {
+          btn.textContent = "Save";
+        }, 1200);
+        await loadOnboardingEmployeeDetail(email);
+      } catch (ex) {
+        alert(ex.message || "Save failed");
+      }
+    });
+  });
+  container.querySelectorAll(".onboarding-reminder-delete").forEach((btn) => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if (!confirm("Delete this reminder record?")) return;
+      try {
+        const res = await api(`/admin/reminders/${encodeURIComponent(btn.dataset.reminderId)}`, {
+          method: "DELETE",
+        });
+        if (!res.ok && res.status !== 204) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(formatApiError(data, "Could not delete reminder"));
+        }
+        await loadOnboardingEmployeeDetail(email);
+      } catch (ex) {
+        alert(ex.message || "Delete failed");
+      }
+    });
+  });
+}
+
+async function deleteOnboardingEmployee(email) {
+  if (currentRole() !== "admin") return;
+  if (
+    !confirm(
+      `Delete employee ${email} and all their tasks and reminders? This cannot be undone.`
+    )
+  ) {
+    return;
+  }
+  try {
+    const res = await api(`/admin/employees/${encodeURIComponent(email)}`, {
+      method: "DELETE",
+    });
+    if (!res.ok && res.status !== 204) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(formatApiError(data, "Could not delete employee"));
+    }
+    if (_onboardingSelectedEmail === email) {
+      _onboardingSelectedEmail = "";
+      const wrap = $("#onboarding-drilldown");
+      if (wrap) wrap.hidden = true;
+    }
+    await loadOnboarding();
+  } catch (ex) {
+    alert(ex.message || "Delete failed");
+  }
+}
+
+function openOnboardingEditModal(email) {
+  const modal = $("#onboarding-edit-modal");
+  const form = $("#onboarding-edit-form");
+  const err = $("#onboarding-edit-error");
+  if (!modal || !form) return;
+  err.hidden = true;
+  modal.hidden = false;
+  document.body.classList.add("board-modal-open");
+  api(`/admin/employees/${encodeURIComponent(email)}`)
+    .then((r) => r.json())
+    .then((data) => {
+      const emp = data.employee || {};
+      $("#onboarding-edit-title").textContent = `Edit — ${emp.full_name || email}`;
+      $("#onboarding-edit-email").value = emp.email || email;
+      form.full_name.value = emp.full_name || "";
+      form.employee_id.value = emp.employee_id || "";
+      form.department.value = emp.department || "engineering";
+      form.role_title.value = emp.role_title || "";
+      form.manager_email.value = emp.manager_email || "";
+      form.office_location.value = emp.office_location || "";
+      form.joining_date.value = emp.joining_date || "";
+      form.onboarding_complete.value = emp.onboarding_complete ? "true" : "false";
+      form.active.value = emp.active !== false ? "true" : "false";
+    })
+    .catch((ex) => {
+      err.hidden = false;
+      err.textContent = ex.message || "Could not load employee";
+    });
+}
+
+function closeOnboardingEditModal() {
+  const modal = $("#onboarding-edit-modal");
+  if (modal) modal.hidden = true;
+  document.body.classList.remove("board-modal-open");
+}
+
+const ONBOARDING_TASK_CATEGORIES = ["identity", "payroll", "benefits", "documents", "apps"];
+const ONBOARDING_TASK_STATUSES = ["pending", "completed", "skipped"];
+const ONBOARDING_REMINDER_STATUSES = ["sent", "failed", "opened"];
+const ONBOARDING_REMINDER_CHANNELS = ["email", "slack", "teams"];
+
+function onboardingDbSelect(value, options, field) {
+  return `<select class="onboarding-db-input" data-field="${field}">${options
+    .map(
+      (o) =>
+        `<option value="${o}"${String(value || "").toLowerCase() === o ? " selected" : ""}>${o}</option>`
+    )
+    .join("")}</select>`;
+}
+
+function onboardingDbInput(value, field, type = "text", extra = "") {
+  const v = value == null ? "" : String(value);
+  return `<input class="onboarding-db-input" type="${type}" data-field="${field}" value="${escapeHtml(v)}" ${extra} />`;
+}
+
+function formatReminderInput(sentAt) {
+  if (!sentAt) return "";
+  return sentAt.replace("T", " ").slice(0, 19);
+}
+
+function renderOnboardingTaskRow(t) {
+  return `<tr data-task-id="${escapeHtml(t.id)}">
+    <td class="mono onboarding-db-readonly" title="${escapeHtml(t.id)}">${escapeHtml(t.task_key)}</td>
+    <td>${onboardingDbInput(t.task_title, "task_title")}</td>
+    <td>${onboardingDbSelect(t.category, ONBOARDING_TASK_CATEGORIES, "category")}</td>
+    <td>${onboardingDbSelect(t.status, ONBOARDING_TASK_STATUSES, "status")}</td>
+    <td>${onboardingDbInput(t.due_date, "due_date", "date")}</td>
+    <td>${onboardingDbInput(t.link_url, "link_url")}</td>
+    <td>${onboardingDbInput(t.sort_order, "sort_order", "number", 'min="0" style="width:4rem"')}</td>
+    <td class="onboarding-row-actions">
+      <button type="button" class="chip onboarding-task-save">Save</button>
+      <button type="button" class="chip danger onboarding-task-delete" data-task-id="${escapeHtml(t.id)}">Del</button>
+    </td>
+  </tr>`;
+}
+
+function renderOnboardingReminderRow(r) {
+  return `<tr data-reminder-id="${escapeHtml(r.id)}">
+    <td>${onboardingDbInput(formatReminderInput(r.sent_at), "sent_at")}</td>
+    <td>${onboardingDbInput(r.reminder_type, "reminder_type")}</td>
+    <td>${onboardingDbSelect(r.delivery_status, ONBOARDING_REMINDER_STATUSES, "delivery_status")}</td>
+    <td>${onboardingDbSelect(r.channel || "email", ONBOARDING_REMINDER_CHANNELS, "channel")}</td>
+    <td class="onboarding-row-actions">
+      <button type="button" class="chip onboarding-reminder-save">Save</button>
+      <button type="button" class="chip danger onboarding-reminder-delete" data-reminder-id="${escapeHtml(r.id)}">Del</button>
+    </td>
+  </tr>`;
+}
+
+function onboardingEmployeesUrl() {
+  if (_onboardingFilter === "active") return "/admin/employees?onboarding_complete=false";
+  if (_onboardingFilter === "complete") return "/admin/employees?onboarding_complete=true";
+  return "/admin/employees";
+}
+
+async function loadOnboarding() {
+  if (currentRole() !== "admin") return;
+
+  const [overviewRes, employeesRes] = await Promise.all([
+    api("/admin/onboarding/overview"),
+    api(onboardingEmployeesUrl()),
+  ]);
+  const overview = await overviewRes.json();
+  const employees = await employeesRes.json();
+
+  const rateByEmail = {};
+  (overview.completion_rates || []).forEach((r) => {
+    rateByEmail[r.email] = r;
+  });
+
+  const kpis = $("#onboarding-kpis");
+  if (kpis) {
+    const activeCount = (overview.completion_rates || []).length;
+    const followUp = (overview.employees_needing_followup || []).length;
+    const pendingTotal = Object.values(overview.pending_by_category || {}).reduce(
+      (s, n) => s + (n || 0),
+      0
+    );
+    kpis.innerHTML = `
+      <article class="kpi-card">
+        <p class="kpi-label">New hires this week</p>
+        <h2>${overview.new_hires_this_week || 0}</h2>
+        <p class="kpi-sub">calendar week</p>
+      </article>
+      <article class="kpi-card">
+        <p class="kpi-label">Active onboardings</p>
+        <h2>${activeCount}</h2>
+        <p class="kpi-sub">incomplete checklists</p>
+      </article>
+      <article class="kpi-card">
+        <p class="kpi-label">Needs follow-up</p>
+        <h2>${followUp}</h2>
+        <p class="kpi-sub">day 5+ incomplete</p>
+      </article>
+      <article class="kpi-card">
+        <p class="kpi-label">Pending tasks</p>
+        <h2>${pendingTotal}</h2>
+        <p class="kpi-sub">across categories</p>
+      </article>`;
+  }
+
+  barList($("#onboarding-category-bars"), overview.pending_by_category || {}, ONBOARDING_CATEGORY_COLORS);
+
+  const followBody = $("#onboarding-followup-table tbody");
+  const followRows = overview.employees_needing_followup || [];
+  if (followBody) {
+    if (!followRows.length) {
+      followBody.innerHTML = `<tr><td colspan="3">No employees need follow-up right now.</td></tr>`;
+    } else {
+      followBody.innerHTML = followRows
+        .map(
+          (r) => `<tr class="onboarding-row" data-email="${escapeHtml(r.email)}" style="cursor:pointer">
+            <td>${escapeHtml(r.name)}</td>
+            <td class="mono">Day ${r.onboarding_day}</td>
+            <td>${onboardingProgressCell(r.completed, r.total, r.percentage)}</td>
+          </tr>`
+        )
+        .join("");
+      followBody.querySelectorAll(".onboarding-row").forEach((row) => {
+        row.addEventListener("click", () => loadOnboardingEmployeeDetail(row.dataset.email));
+      });
+    }
+  }
+
+  const empBody = $("#onboarding-employees-table tbody");
+  if (empBody) {
+    if (!employees.length) {
+      empBody.innerHTML = `<tr><td colspan="8">No employees yet — add a new hire to get started.</td></tr>`;
+    } else {
+      empBody.innerHTML = employees
+        .map((e) => {
+          const rate = rateByEmail[e.email] || { completed: 0, total: 0, percentage: 0 };
+          return `<tr class="onboarding-row" data-email="${escapeHtml(e.email)}" style="cursor:pointer">
+            <td>${escapeHtml(e.full_name)}</td>
+            <td>${escapeHtml(e.email)}</td>
+            <td>${escapeHtml(e.department)}</td>
+            <td class="mono">${escapeHtml(e.joining_date || "—")}</td>
+            <td>${onboardingProgressCell(rate.completed, rate.total, rate.percentage)}</td>
+            <td>${onboardingStatusTag(e.onboarding_complete)}</td>
+            <td>${onboardingActiveTag(e.active !== false)}</td>
+            <td>${onboardingActionButtons(e.email)}</td>
+          </tr>`;
+        })
+        .join("");
+      bindOnboardingEmployeeActions(empBody);
+    }
+  }
+}
+
+async function loadOnboardingEmployeeDetail(email) {
+  _onboardingSelectedEmail = email;
+  const wrap = $("#onboarding-drilldown");
+  const title = $("#onboarding-drill-title");
+  const sub = $("#onboarding-drill-sub");
+  const meta = $("#onboarding-drill-meta");
+  const tasksBody = $("#onboarding-tasks-table tbody");
+  const remindersBody = $("#onboarding-reminders-table tbody");
+  if (!wrap || !tasksBody || !remindersBody) return;
+
+  wrap.hidden = false;
+  title.textContent = email;
+  sub.textContent = "Loading…";
+  meta.innerHTML = "";
+  tasksBody.innerHTML = `<tr><td colspan="8">Loading…</td></tr>`;
+  remindersBody.innerHTML = `<tr><td colspan="5">Loading…</td></tr>`;
+  wrap.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  const data = await api(`/admin/onboarding/employee/${encodeURIComponent(email)}`).then((r) =>
+    r.json()
+  );
+  const emp = data.employee || {};
+  title.textContent = emp.full_name || email;
+  sub.textContent = `${email} · ${emp.department || "—"} · joined ${emp.joining_date || "—"}`;
+  meta.innerHTML = `
+    <div class="onboarding-drill-stat">
+      <span>Progress</span>
+      <strong>${data.completed}/${data.total} (${data.percentage}%)</strong>
+    </div>
+    <div class="onboarding-drill-stat">
+      <span>Manager</span>
+      <strong>${escapeHtml(emp.manager_email || "—")}</strong>
+    </div>
+    <div class="onboarding-drill-stat">
+      <span>Role</span>
+      <strong>${escapeHtml(emp.role_title || "—")}</strong>
+    </div>
+    <div class="onboarding-drill-stat">
+      <span>Status</span>
+      <strong>${emp.onboarding_complete ? "Complete" : "In progress"} · ${emp.active !== false ? "Active" : "Inactive"}</strong>
+    </div>
+    <div class="onboarding-drill-stat">
+      <span>Created</span>
+      <strong class="mono">${escapeHtml((emp.created_at || "").replace("T", " ").slice(0, 19) || "—")}</strong>
+    </div>
+    <div class="onboarding-drill-stat">
+      <span>Started</span>
+      <strong class="mono">${escapeHtml((emp.onboarding_started_at || "—").replace("T", " ").slice(0, 19))}</strong>
+    </div>`;
+
+  const tasks = data.tasks || [];
+  if (!tasks.length) {
+    tasksBody.innerHTML = `<tr><td colspan="8">No tasks.</td></tr>`;
+  } else {
+    tasksBody.innerHTML = tasks.map(renderOnboardingTaskRow).join("");
+    bindOnboardingTaskActions(tasksBody, email);
+  }
+
+  const reminders = data.reminders || [];
+  if (!reminders.length) {
+    remindersBody.innerHTML = `<tr><td colspan="5">No reminders sent yet.</td></tr>`;
+  } else {
+    remindersBody.innerHTML = reminders.map(renderOnboardingReminderRow).join("");
+    bindOnboardingReminderActions(remindersBody, email);
+  }
+}
+
+function setOnboardingCreatePanel(open) {
+  const panel = $("#onboarding-create-panel");
+  const err = $("#onboarding-create-error");
+  const ok = $("#onboarding-create-success");
+  if (!panel) return;
+  panel.hidden = !open;
+  if (err) err.hidden = true;
+  if (ok) ok.hidden = true;
+  if (open) {
+    const dateInput = $("#onboarding-create-form input[name=joining_date]");
+    if (dateInput && !dateInput.value) {
+      dateInput.value = new Date().toISOString().slice(0, 10);
+    }
+  }
+}
+
+$("#refresh-onboarding")?.addEventListener("click", loadOnboarding);
+
+$("#onboarding-toggle-create")?.addEventListener("click", () => {
+  const panel = $("#onboarding-create-panel");
+  setOnboardingCreatePanel(panel?.hidden);
+});
+
+$("#onboarding-cancel-create")?.addEventListener("click", () => setOnboardingCreatePanel(false));
+
+$("#onboarding-edit-employee")?.addEventListener("click", () => {
+  if (_onboardingSelectedEmail) openOnboardingEditModal(_onboardingSelectedEmail);
+});
+
+$("#onboarding-delete-employee")?.addEventListener("click", () => {
+  if (_onboardingSelectedEmail) deleteOnboardingEmployee(_onboardingSelectedEmail);
+});
+
+$("#onboarding-edit-close")?.addEventListener("click", closeOnboardingEditModal);
+$("#onboarding-edit-cancel")?.addEventListener("click", closeOnboardingEditModal);
+$("#onboarding-edit-backdrop")?.addEventListener("click", closeOnboardingEditModal);
+
+$("#onboarding-edit-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (currentRole() !== "admin") return;
+  const form = e.target;
+  const err = $("#onboarding-edit-error");
+  const save = $("#onboarding-edit-save");
+  const email = String($("#onboarding-edit-email")?.value || "").trim();
+  if (err) err.hidden = true;
+  if (save) {
+    save.disabled = true;
+    save.textContent = "Saving…";
+  }
+  const payload = {
+    full_name: String(form.full_name.value || "").trim(),
+    employee_id: String(form.employee_id.value || "").trim() || null,
+    department: String(form.department.value || "").trim(),
+    role_title: String(form.role_title.value || "").trim(),
+    manager_email: String(form.manager_email.value || "").trim() || null,
+    office_location: String(form.office_location.value || "").trim() || null,
+    joining_date: String(form.joining_date.value || "").trim(),
+    onboarding_complete: form.onboarding_complete.value === "true",
+    active: form.active.value === "true",
+  };
+  try {
+    const res = await api(`/admin/employees/${encodeURIComponent(email)}`, {
+      method: "PUT",
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(formatApiError(data, "Could not save employee"));
+    }
+    closeOnboardingEditModal();
+    await loadOnboarding();
+    if (email) await loadOnboardingEmployeeDetail(email);
+  } catch (ex) {
+    if (err) {
+      err.hidden = false;
+      err.textContent = ex.message || "Save failed";
+    }
+  } finally {
+    if (save) {
+      save.disabled = false;
+      save.textContent = "Save changes";
+    }
+  }
+});
+
+$$(".onboarding-filter").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    _onboardingFilter = btn.dataset.filter || "all";
+    $$(".onboarding-filter").forEach((b) => b.classList.toggle("active", b === btn));
+    loadOnboarding();
+  });
+});
+
+$("#onboarding-create-form")?.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (currentRole() !== "admin") return;
+  const form = e.target;
+  const err = $("#onboarding-create-error");
+  const ok = $("#onboarding-create-success");
+  const submit = $("#onboarding-submit-create");
+  if (err) err.hidden = true;
+  if (ok) ok.hidden = true;
+  if (submit) {
+    submit.disabled = true;
+    submit.textContent = "Creating…";
+  }
+  const fd = new FormData(form);
+  const payload = {
+    email: String(fd.get("email") || "").trim(),
+    full_name: String(fd.get("full_name") || "").trim(),
+    employee_id: String(fd.get("employee_id") || "").trim() || null,
+    department: String(fd.get("department") || "").trim(),
+    role_title: String(fd.get("role_title") || "").trim(),
+    manager_email: String(fd.get("manager_email") || "").trim() || null,
+    office_location: String(fd.get("office_location") || "").trim() || null,
+    joining_date: String(fd.get("joining_date") || "").trim(),
+    provision_login: fd.get("provision_login") === "on",
+  };
+  try {
+    const res = await api("/admin/employees", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(formatApiError(data, "Could not create employee"));
+    }
+    if (ok) {
+      ok.hidden = false;
+      let msg = `Created ${data.employee.full_name} with ${data.tasks_generated} onboarding tasks.`;
+      if (data.temp_password) {
+        msg += ` Temp password (share securely): ${data.temp_password}`;
+      }
+      ok.textContent = msg;
+    }
+    form.reset();
+    await loadOnboarding();
+    if (data.employee?.email) {
+      loadOnboardingEmployeeDetail(data.employee.email);
+    }
+  } catch (ex) {
+    if (err) {
+      err.hidden = false;
+      err.textContent = ex.message || "Create failed";
+    }
+  } finally {
+    if (submit) {
+      submit.disabled = false;
+      submit.textContent = "Create & generate tasks";
+    }
+  }
+});
 
 (async function boot() {
   try {

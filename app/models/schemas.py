@@ -18,6 +18,10 @@ class QueryRequest(BaseModel):
         default=None,
         description="Chat session id; created automatically when omitted",
     )
+    confirm_ticket: Optional[bool] = Field(
+        default=None,
+        description="True to create pending ticket; False to decline; omit for normal query",
+    )
 
 
 class QueryResponse(BaseModel):
@@ -40,6 +44,12 @@ class QueryResponse(BaseModel):
     prompt_score: Optional[int] = None
     prompt_feedback: Optional[Dict[str, Any]] = None
     session_id: Optional[str] = None
+    intent: Optional[str] = None
+    intent_confidence: Optional[str] = None
+    nlp_allowed: Optional[bool] = None
+    block_kind: Optional[str] = None
+    pending_ticket_confirmation: bool = False
+    reservation_calendar: Optional[Dict[str, Any]] = None
 
 
 class SessionCreateResponse(BaseModel):
@@ -272,3 +282,262 @@ class DocumentActiveResponse(BaseModel):
     page_count: Optional[int] = None
     text: Optional[str] = None
     text_expired: bool = False
+
+
+# --- Onboarding ---
+
+
+class CreateEmployeeRequest(BaseModel):
+    email: str = Field(..., min_length=3)
+    full_name: str = Field(..., min_length=1)
+    employee_id: Optional[str] = None
+    department: str = Field(
+        ...,
+        description="engineering | data | hr | sales | compliance | legal",
+    )
+    role_title: str = Field(..., min_length=1)
+    manager_email: Optional[str] = None
+    office_location: Optional[str] = None
+    joining_date: str = Field(..., description="ISO date YYYY-MM-DD")
+    provision_login: bool = False
+
+
+class EmployeeOut(BaseModel):
+    email: str
+    full_name: str
+    employee_id: Optional[str] = None
+    department: str
+    role_title: str
+    manager_email: Optional[str] = None
+    office_location: Optional[str] = None
+    joining_date: str
+    onboarding_complete: bool = False
+    onboarding_started_at: Optional[str] = None
+    created_by: Optional[str] = None
+    created_at: str
+    active: bool = True
+
+
+class CreateEmployeeResponse(BaseModel):
+    employee: EmployeeOut
+    tasks_generated: int
+    temp_password: Optional[str] = None
+
+
+class UpdateEmployeeRequest(BaseModel):
+    full_name: Optional[str] = None
+    employee_id: Optional[str] = None
+    department: Optional[str] = None
+    role_title: Optional[str] = None
+    manager_email: Optional[str] = None
+    office_location: Optional[str] = None
+    joining_date: Optional[str] = None
+    active: Optional[bool] = None
+    onboarding_complete: Optional[bool] = None
+
+
+class AdminTaskUpdate(BaseModel):
+    task_title: Optional[str] = None
+    task_description: Optional[str] = None
+    category: Optional[str] = None
+    status: Optional[str] = Field(None, description="pending | completed | skipped")
+    due_date: Optional[str] = None
+    link_url: Optional[str] = None
+    sort_order: Optional[int] = None
+
+
+class AdminReminderUpdate(BaseModel):
+    reminder_type: Optional[str] = None
+    sent_at: Optional[str] = None
+    delivery_status: Optional[str] = None
+    channel: Optional[str] = None
+
+
+class OnboardingTaskOut(BaseModel):
+    id: str
+    employee_email: str
+    task_key: str
+    task_title: str
+    task_description: Optional[str] = None
+    category: str
+    status: str
+    due_date: Optional[str] = None
+    completed_at: Optional[str] = None
+    reminder_count: int = 0
+    last_reminded_at: Optional[str] = None
+    link_url: Optional[str] = None
+    department_specific: bool = False
+    sort_order: int = 0
+
+
+class EmployeeDetailResponse(BaseModel):
+    employee: EmployeeOut
+    tasks: List[OnboardingTaskOut] = Field(default_factory=list)
+    tasks_generated: int = 0
+
+
+class MyTasksResponse(BaseModel):
+    email: str
+    completed: int
+    total: int
+    percentage: float
+    tasks_by_category: Dict[str, List[OnboardingTaskOut]] = Field(default_factory=dict)
+
+
+class TaskStatusUpdate(BaseModel):
+    status: str = Field(..., description="completed | skipped")
+
+
+class OnboardingReminderOut(BaseModel):
+    id: str
+    employee_email: str
+    task_id: Optional[str] = None
+    reminder_type: str
+    sent_at: str
+    delivery_status: str = "sent"
+    channel: str = "email"
+
+
+class CompletionRateEntry(BaseModel):
+    email: str
+    name: str
+    joining_date: str
+    completed: int
+    total: int
+    percentage: float
+
+
+class FollowupEntry(BaseModel):
+    email: str
+    name: str
+    joining_date: str
+    onboarding_day: int
+    completed: int
+    total: int
+    percentage: float
+
+
+class OnboardingOverviewResponse(BaseModel):
+    new_hires_this_week: int
+    completion_rates: List[CompletionRateEntry] = Field(default_factory=list)
+    pending_by_category: Dict[str, int] = Field(default_factory=dict)
+    employees_needing_followup: List[FollowupEntry] = Field(default_factory=list)
+
+
+class OnboardingEmployeeDetailResponse(BaseModel):
+    employee: EmployeeOut
+    tasks: List[OnboardingTaskOut] = Field(default_factory=list)
+    reminders: List[OnboardingReminderOut] = Field(default_factory=list)
+    completed: int
+    total: int
+    percentage: float
+
+
+# --- Guesthouse reservations ---
+
+
+class GuesthouseOut(BaseModel):
+    id: str
+    name: str
+    address: str
+    city: str
+    amenities: List[str] = Field(default_factory=list)
+    room_count: int = 0
+
+
+class RoomOut(BaseModel):
+    id: str
+    guesthouse_id: str
+    room_number: str
+    room_name: str
+    capacity: int = 2
+    amenities: List[str] = Field(default_factory=list)
+    guesthouse_name: Optional[str] = None
+
+
+class GuesthouseWithRoomsOut(GuesthouseOut):
+    rooms: List[RoomOut] = Field(default_factory=list)
+
+
+class ReservationOut(BaseModel):
+    id: str
+    confirmation_number: str
+    employee_email: str
+    room_id: str
+    guesthouse_id: str
+    checkin_date: str
+    checkout_date: str
+    purpose: str
+    status: str
+    guesthouse_name: Optional[str] = None
+    guesthouse_address: Optional[str] = None
+    room_number: Optional[str] = None
+    room_name: Optional[str] = None
+    created_at: Optional[str] = None
+    approved_at: Optional[str] = None
+    auto_approve_at: Optional[str] = None
+
+
+class CreateReservationRequest(BaseModel):
+    room_id: str
+    checkin_date: str = Field(..., description="YYYY-MM-DD")
+    checkout_date: str = Field(..., description="YYYY-MM-DD")
+    purpose: str = Field(..., description="Business travel | Client meeting | Training | Team offsite | Other")
+
+
+class ModifyReservationRequest(BaseModel):
+    checkin_date: str
+    checkout_date: str
+
+
+class RejectReservationRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
+
+
+class OverrideReservationRequest(BaseModel):
+    reason: str = Field(..., min_length=1)
+
+
+class AdminCreateReservationRequest(BaseModel):
+    employee_email: str = Field(..., min_length=3)
+    room_id: str
+    checkin_date: str = Field(..., description="YYYY-MM-DD")
+    checkout_date: str = Field(..., description="YYYY-MM-DD")
+    purpose: str = Field(default="Business travel")
+    auto_confirm: bool = True
+
+
+class AvailabilityConflictOut(BaseModel):
+    room_id: Optional[str] = None
+    guesthouse_name: Optional[str] = None
+    room_number: Optional[str] = None
+    date: Optional[str] = None
+    proposed_status: Optional[str] = None
+    employee_email: Optional[str] = None
+    confirmation_number: Optional[str] = None
+    reservation_id: Optional[str] = None
+    reservation_status: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class AvailabilityUploadResult(BaseModel):
+    applied: int
+    conflicts: List[AvailabilityConflictOut] = Field(default_factory=list)
+
+
+class AvailabilityConflictResolve(BaseModel):
+    room_id: str
+    date: str
+    proposed_status: str
+    action: str = Field(..., description="skip | override")
+    reservation_id: Optional[str] = None
+    reason: Optional[str] = None
+
+
+class OccupancyReportOut(BaseModel):
+    from_date: str
+    to_date: str
+    total_room_days: int
+    booked_days: int
+    occupancy_pct: float
+    total_reservations: int
