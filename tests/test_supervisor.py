@@ -57,7 +57,10 @@ TEST_CASES = [
     ("thanks that was really helpful", "employee", "conversational", {}),
     ("my VPN keeps disconnecting", "employee", "helpdesk_query", {}),
     ("do I need legal to review this NDA?", "employee", "helpdesk_query", {}),
-    ("book me a room for Tuesday", "employee", "reservation_query", {}),
+    ("book the guesthouse for Tuesday", "employee", "reservation_query", {}),
+    ("where is the nearest printer?", "employee", "infrastructure_info", {}),
+    ("print this document", "employee", "infrastructure_action", {"has_document": True}),
+    ("book a conference room tomorrow at 2pm", "employee", "infrastructure_action", {}),
     (
         "I've completed my MFA setup",
         "employee",

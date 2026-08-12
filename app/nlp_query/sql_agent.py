@@ -193,12 +193,18 @@ def _user_question_only(text: str) -> str:
 def _team_role_filter(q: str) -> str | None:
     """Return a LIKE fragment for a specific role question, else None."""
     role_patterns: tuple[tuple[tuple[str, ...], str], ...] = (
+        (("ceo", "group ceo", "chief executive", "founder"), "%group ceo%"),
+        (("coo", "chief operating officer"), "%chief operating officer%"),
+        (("group president",), "%group president%"),
+        (("cro", "chief revenue officer"), "%chief revenue officer%"),
+        (("chief forensics",), "%chief forensics%"),
+        (("human resources", "head of hr", "chro", "hr manager"), "%human resources%"),
         (("cto", "chief technology officer"), "%chief technology%"),
         (("head of compliance", "compliance lead"), "%head of compliance%"),
         (("vp engineering", "vice president of engineering", "vice president engineering"),
          "%vp engineering%"),
         (("head of legal", "general counsel"), "%head of legal%"),
-        (("head of hr", "head of human resources", "chro"), "%head of hr%"),
+        (("head of hr", "head of human resources"), "%head of hr%"),
         (
             ("head of customer success", "customer success lead"),
             "%head of customer success%",

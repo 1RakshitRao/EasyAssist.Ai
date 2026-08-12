@@ -15,6 +15,7 @@ from app.agents.board_monitor import run_board_monitor_once
 from app.onboarding.reminder_job import run_onboarding_reminders_once
 from app.reservations.reminder_job import run_reservation_reminders_once
 from app.reservations.store import seed_guesthouses
+from app.infrastructure.store import seed_conference_rooms_if_empty, seed_office_printers_if_empty
 from app.analytics.stats import reset_stats
 from app.api.routes_admin_insights import router as admin_insights_router
 from app.api.routes_auth import router as auth_router
@@ -30,6 +31,7 @@ from app.api.routes_sessions import router as sessions_router
 from app.api.routes_stats import router as stats_router
 from app.api.routes_tickets import router as tickets_router
 from app.api.routes_reservations import router as reservations_router
+from app.api.routes_infrastructure import router as infrastructure_router
 from app.audit.db import init_audit_db
 from app.auth.users import bootstrap_admin_if_empty
 from app.cache.redis_cache import get_cache
@@ -119,6 +121,8 @@ async def lifespan(_app: FastAPI):
     bootstrap_admin_if_empty()
     init_audit_db()
     seed_guesthouses()
+    seed_office_printers_if_empty()
+    seed_conference_rooms_if_empty()
     seed_company_facts_if_empty()
     try:
         from app.documents.storage import cleanup_old_document_files
@@ -180,6 +184,7 @@ app.include_router(tickets_router)
 app.include_router(notifications_router)
 app.include_router(onboarding_router)
 app.include_router(reservations_router)
+app.include_router(infrastructure_router)
 app.include_router(stats_router)
 app.include_router(admin_insights_router)
 

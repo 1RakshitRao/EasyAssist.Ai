@@ -42,6 +42,8 @@ def _supervisor_payload(intent: str, **extra) -> MagicMock:
         ("document_op", "document_op"),
         ("onboarding_query", "onboarding"),
         ("reservation_query", "reservation"),
+        ("infrastructure_info", "infrastructure_info"),
+        ("infrastructure_action", "infrastructure_action"),
         ("restricted", "block"),
         ("out_of_scope", "decline"),
     ],

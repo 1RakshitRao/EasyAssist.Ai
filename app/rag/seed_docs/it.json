@@ -38,5 +38,40 @@
     "id": "it-incident-severity",
     "title": "IT Incident Severity",
     "content": "P1: production outage affecting many users — call the on-call bridge. P2: major feature degraded. P3: single-user or minor issue — submit a ticket. Data breach suspicion is always treated as P1 and escalated to security."
+  },
+  {
+    "id": "it-printers",
+    "title": "Office Printers by Location",
+    "content": "Office printer: TOSHIBA e-STUDIO3505AC-11965425 at IPP endpoint http://10.1.0.22:50081/ipp/print (color, duplex, staple, 35 ppm). To print from chat, upload a PDF and say 'print this'. Conference rooms: Room A (12 seats, Teams Room), Room B (6 seats), Room C (20 seats). Walk-up printing: badge at the device to release your job."
+  },
+  {
+    "id": "it-conference-rooms",
+    "title": "Conference Rooms",
+    "content": "Conference rooms at Ampcus Office: Room A (12 seats, Teams Room, HDMI), Room B (6 seats, display only), Room C (20 seats, video conferencing). Book via chat ('book a conference room tomorrow at 2pm') or Outlook room calendars. Rooms auto-release 15 minutes after start if no check-in."
+  },
+  {
+    "id": "it-wifi-detail",
+    "title": "Office Wi-Fi Details",
+    "content": "Corporate SSID: Ampcus-Corp — authenticate with SSO (same as laptop login). Guest SSID: Ampcus-Guest — visitor name + sponsor email; no internal access. Conference room TVs and printers require Ampcus-Corp with device certificate (install via Company Portal). Password is not used for Ampcus-Corp; use your corporate identity. If Wi-Fi fails after password change, forget the network and rejoin."
+  },
+  {
+    "id": "it-parking",
+    "title": "Parking and Commute",
+    "content": "New York HQ: Garage levels B1–B2, badge access; visitor parking on street level with front desk validation. Austin: Surface lot — register plate with facilities. London: No on-site parking; nearest NCP on Baker Street. Bangalore: Basement parking — security assigns slot. Toronto: Shared building garage, badge required. Singapore: Limited visitor bays — book 24h ahead via facilities@ampcus.com."
+  },
+  {
+    "id": "it-building-access",
+    "title": "Building Access and Badge",
+    "content": "Office badge hours: Mon–Fri 7:00–20:00 local time at all sites. After-hours entry requires manager-approved access list (submit via IT Service Catalog). Visitors must check in at reception and wear a guest badge. Lost badge: report immediately to security@ampcus.com and facilities; badge is deactivated within 15 minutes."
+  },
+  {
+    "id": "it-cafeteria",
+    "title": "Cafeteria and Amenities",
+    "content": "New York HQ: Cafeteria 11:30–14:00, coffee bar all day. Austin: Kitchenette only — no full cafeteria. London: Deli partners in building lobby. Bangalore: Full cafeteria 12:00–15:00 IST. All sites: filtered water, mother's room, and prayer/meditation room where marked on floor plans. Ask facilities for dietary accommodation at company events."
+  },
+  {
+    "id": "it-conference-room-av",
+    "title": "Conference Room AV Setup",
+    "content": "Teams Room systems: select 'Join with room device' in Teams; HDMI for laptops is labeled on the table. Non-Teams rooms: use the wall panel to power on display; HDMI cable at the table. If the TV shows 'No signal', press Input until HDMI-1. For wireless presentation, use Microsoft Wireless Display Adapter where installed (NY Room A, London Thames). Report AV issues to IT with room name and time."
   }
 ]

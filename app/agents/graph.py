@@ -18,6 +18,8 @@ from app.agents.supervisor_nodes import (
     decline_node,
     direct_reply_node,
     document_node,
+    infrastructure_action_node,
+    infrastructure_info_node,
     nlp_node,
     onboarding_node,
     reservation_node,
@@ -37,6 +39,8 @@ _INTENT_TO_NODE = {
     "document_op": "document_op",
     "onboarding_query": "onboarding",
     "reservation_query": "reservation",
+    "infrastructure_info": "infrastructure_info",
+    "infrastructure_action": "infrastructure_action",
     "restricted": "block",
     "out_of_scope": "decline",
 }
@@ -51,6 +55,8 @@ def route_after_supervisor(
     "document_op",
     "onboarding",
     "reservation",
+    "infrastructure_info",
+    "infrastructure_action",
     "block",
     "decline",
 ]:
@@ -123,6 +129,8 @@ def build_graph():
     graph.add_node("document_op", document_node)
     graph.add_node("onboarding", onboarding_node)
     graph.add_node("reservation", reservation_node)
+    graph.add_node("infrastructure_info", infrastructure_info_node)
+    graph.add_node("infrastructure_action", infrastructure_action_node)
     graph.add_node("block", block_node)
     graph.add_node("decline", decline_node)
 
@@ -137,6 +145,8 @@ def build_graph():
             "document_op": "document_op",
             "onboarding": "onboarding",
             "reservation": "reservation",
+            "infrastructure_info": "infrastructure_info",
+            "infrastructure_action": "infrastructure_action",
             "block": "block",
             "decline": "decline",
         },
@@ -174,6 +184,8 @@ def build_graph():
         "document_op",
         "onboarding",
         "reservation",
+        "infrastructure_info",
+        "infrastructure_action",
         "block",
         "decline",
     ):

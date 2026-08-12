@@ -17,3 +17,4 @@ python-docx>=1.1.0
 python-multipart>=0.0.9
 mammoth>=1.8.0
 openpyxl>=3.1.0
+ippx>=0.1.0

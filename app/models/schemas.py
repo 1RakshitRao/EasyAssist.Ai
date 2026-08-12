@@ -541,3 +541,28 @@ class OccupancyReportOut(BaseModel):
     booked_days: int
     occupancy_pct: float
     total_reservations: int
+
+
+class OfficePrinterOut(BaseModel):
+    id: str
+    office_location: str
+    printer_name: str
+    printer_ip: str
+    ipp_port: int = 631
+    ipp_path: str = "/ipp/print"
+    model: Optional[str] = None
+    floor: Optional[str] = None
+    notes: Optional[str] = None
+    active: bool = True
+    created_at: str
+
+
+class CreateOfficePrinterRequest(BaseModel):
+    printer_name: str
+    printer_ip: str
+    office_location: str = "Ampcus Office"
+    ipp_port: int = 631
+    ipp_path: str = "/ipp/print"
+    model: Optional[str] = None
+    floor: Optional[str] = None
+    notes: Optional[str] = None
