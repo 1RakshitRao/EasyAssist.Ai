@@ -4650,7 +4650,6 @@ function openOnboardingEditModal(email) {
       form.department.value = emp.department || "engineering";
       form.role_title.value = emp.role_title || "";
       form.manager_email.value = emp.manager_email || "";
-      form.office_location.value = emp.office_location || "";
       form.joining_date.value = emp.joining_date || "";
       form.onboarding_complete.value = emp.onboarding_complete ? "true" : "false";
       form.active.value = emp.active !== false ? "true" : "false";
@@ -4942,7 +4941,6 @@ $("#onboarding-edit-form")?.addEventListener("submit", async (e) => {
     department: String(form.department.value || "").trim(),
     role_title: String(form.role_title.value || "").trim(),
     manager_email: String(form.manager_email.value || "").trim() || null,
-    office_location: String(form.office_location.value || "").trim() || null,
     joining_date: String(form.joining_date.value || "").trim(),
     onboarding_complete: form.onboarding_complete.value === "true",
     active: form.active.value === "true",
@@ -5001,7 +4999,6 @@ $("#onboarding-create-form")?.addEventListener("submit", async (e) => {
     department: String(fd.get("department") || "").trim(),
     role_title: String(fd.get("role_title") || "").trim(),
     manager_email: String(fd.get("manager_email") || "").trim() || null,
-    office_location: String(fd.get("office_location") || "").trim() || null,
     joining_date: String(fd.get("joining_date") || "").trim(),
     provision_login: fd.get("provision_login") === "on",
   };

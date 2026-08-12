@@ -21,6 +21,7 @@ SEED_CATEGORIES = (
     "products",
     "team",
     "partnerships",
+    "infrastructure",
 )
 
 FACT_CATEGORIES = SEED_CATEGORIES
@@ -46,6 +47,126 @@ def _fact(
         "details": json.dumps(attrs, ensure_ascii=False),
     }
 
+
+def _team(
+    name: str,
+    title: str,
+    department: str = "Ampcus",
+    *,
+    detail_2: str = "Executive leadership team",
+) -> Dict[str, Any]:
+    loc = "Chantilly, VA"
+    return _fact(
+        "team",
+        name,
+        description=f"{title} — {department} — based in {loc}",
+        detail_1=f"{title} · {department} · {loc}",
+        detail_2=detail_2,
+        title=title,
+        department=department,
+        location=loc,
+        status="active",
+    )
+
+
+def _location(
+    city: str,
+    state: str,
+    *,
+    office_type: str = "U.S. office",
+    is_headquarters: bool = False,
+    country: str = "USA",
+    detail_2: str = "Listed on Ampcus Contact page",
+) -> Dict[str, Any]:
+    label = f"{city}, {state}"
+    if is_headquarters:
+        office_type = "Headquarters"
+    region = "United States" if country == "USA" else country
+    return _fact(
+        "locations",
+        label,
+        description=f"Ampcus {office_type.lower()} in {label}",
+        detail_1=f"{office_type} · {label} · {region}",
+        detail_2=detail_2,
+        type=office_type,
+        city=city,
+        state=state,
+        country=country,
+        region=region,
+        is_headquarters=is_headquarters,
+        status="active",
+    )
+
+
+def _service(
+    name: str,
+    description: str,
+    capabilities: str,
+    *,
+    delivery_unit: str = "Ampcus",
+) -> Dict[str, Any]:
+    return _fact(
+        "services",
+        name,
+        description=description,
+        detail_1=f"Practice area · {delivery_unit}",
+        detail_2=capabilities,
+        type="Practice area",
+        practice_area=name,
+        delivery_unit=delivery_unit,
+        capabilities=capabilities,
+        status="active",
+    )
+
+
+def _partner(
+    name: str,
+    partner_category: str,
+    *,
+    description: str = "",
+    alliance_level: str = "",
+) -> Dict[str, Any]:
+    desc = description or f"{name} — Ampcus partner ({partner_category})"
+    detail_1 = f"{partner_category} · {name}"
+    if alliance_level:
+        detail_1 = f"{detail_1} · {alliance_level}"
+    return _fact(
+        "partnerships",
+        name,
+        description=desc,
+        detail_1=detail_1,
+        detail_2="Listed on Ampcus Partners page",
+        type=partner_category,
+        partner_category=partner_category,
+        alliance_level=alliance_level or None,
+        status="active",
+    )
+
+
+# Bump when seed content changes materially (forces DB refresh on startup).
+SEED_REVISION = 5
+
+_US_OFFICES: List[tuple[str, str, bool]] = [
+    ("Chantilly", "VA", True),
+    ("Atlanta", "GA", False),
+    ("Charlotte", "NC", False),
+    ("Chicago", "IL", False),
+    ("Dallas", "TX", False),
+    ("Denver", "CO", False),
+    ("Detroit", "MI", False),
+    ("Farmington", "CT", False),
+    ("Houston", "TX", False),
+    ("Jacksonville", "FL", False),
+    ("Newark", "CA", False),
+    ("New York", "NY", False),
+    ("Owings Mills", "MD", False),
+    ("Parsippany", "NJ", False),
+    ("Richmond", "VA", False),
+    ("San Francisco", "CA", False),
+    ("Washington", "DC", False),
+    ("Columbus", "OH", False),
+    ("Birmingham", "AL", False),
+]
 
 _SEED: List[Dict[str, Any]] = [
     # —— Clients (10) ——
@@ -220,214 +341,132 @@ _SEED: List[Dict[str, Any]] = [
         status="inactive",
         notes="Contract under renegotiation",
     ),
-    # —— Services (7) ——
-    _fact(
-        "services",
-        "AI Helpdesk Platform",
-        description="Internal AI-powered employee support across HR, IT, Compliance, and Legal",
-        detail_1="Internal · 24/7 · launched 2024 · ~4,200 monthly queries",
-        detail_2="Users: all employees · compliance SOC2 · status active",
-        type="Internal",
-        departments="HR,IT,Compliance,Legal",
-        availability="24/7",
-        compliance_tags="SOC2",
-        users="All employees",
-        launched_year=2024,
-        monthly_queries=4200,
-        status="active",
+    # —— Services (7 practice areas) ——
+    _service(
+        "AI, GenAI & Agentic AI",
+        "Governed enterprise GenAI and agentic AI delivery",
+        "Enterprise GenAI strategy, governed deployment, and agentic AI solutions",
+        delivery_unit="Ampcus",
     ),
-    _fact(
-        "services",
-        "Compliance Advisory",
-        description="External regulatory and policy advisory for enterprise clients",
-        detail_1="External · business hours · Compliance,Legal · launched 2020",
-        detail_2="SOC2,PCI,GDPR · ~310 monthly queries · status active",
-        type="External",
-        departments="Compliance,Legal",
-        availability="Business hours",
-        compliance_tags="SOC2,PCI,GDPR",
-        users="Enterprise clients",
-        launched_year=2020,
-        monthly_queries=310,
-        status="active",
+    _service(
+        "Intelligent Automation",
+        "AI/ML, analytics, and automation at scale",
+        "AI/ML, data engineering, advanced analytics, low-code/no-code, and RPA",
+        delivery_unit="Ampcus",
     ),
-    _fact(
-        "services",
-        "Data Privacy Consulting",
-        description="External privacy consulting for healthcare and finance clients",
-        detail_1="External · Legal,Compliance · business hours · launched 2021",
-        detail_2="GDPR,HIPAA · ~185 monthly queries · status active",
-        type="External",
-        departments="Legal,Compliance",
-        availability="Business hours",
-        compliance_tags="GDPR,HIPAA",
-        users="Healthcare and Finance clients",
-        launched_year=2021,
-        monthly_queries=185,
-        status="active",
+    _service(
+        "Infrastructure Modernization",
+        "Cloud, DevSecOps, and legacy transformation",
+        "DevSecOps, cloud architecture and migration, legacy modernization, virtualization",
+        delivery_unit="Ampcus",
     ),
-    _fact(
-        "services",
-        "IT Managed Services",
-        description="External 24/7 IT managed services for strategic clients",
-        detail_1="External · IT · 24/7 · launched 2019 · ~620 monthly queries",
-        detail_2="SOC2,ISO27001 · users: strategic clients · status active",
-        type="External",
-        departments="IT",
-        availability="24/7",
-        compliance_tags="SOC2,ISO27001",
-        users="Strategic clients",
-        launched_year=2019,
-        monthly_queries=620,
-        status="active",
+    _service(
+        "Cybersecurity and Risk Management",
+        "Compliance, threat intelligence, and infrastructure protection",
+        "Compliance and governance, threat intelligence, infrastructure protection",
+        delivery_unit="Ampcus Cyber",
     ),
-    _fact(
-        "services",
-        "HR Policy Advisory",
-        description="External HR policy advisory for enterprise clients",
-        detail_1="External · HR · business hours · launched 2022 · ~140 monthly queries",
-        detail_2="SOC2 · status active",
-        type="External",
-        departments="HR",
-        availability="Business hours",
-        compliance_tags="SOC2",
-        users="Enterprise clients",
-        launched_year=2022,
-        monthly_queries=140,
-        status="active",
+    _service(
+        "Forensic Accounting and Fraud Investigations",
+        "Insurance claims and litigation support",
+        "Insurance claims, litigation support, and fraud investigations",
+        delivery_unit="Ampcus Forensics",
     ),
-    _fact(
-        "services",
-        "Security Assessment",
-        description="External security assessments for all client tiers",
-        detail_1="External · IT,Compliance · by appointment · launched 2023",
-        detail_2="SOC2,ISO27001,PCI · ~90 monthly queries · status active",
-        type="External",
-        departments="IT,Compliance",
-        availability="By appointment",
-        compliance_tags="SOC2,ISO27001,PCI",
-        users="All client tiers",
-        launched_year=2023,
-        monthly_queries=90,
-        status="active",
+    _service(
+        "Independent Verification and Validation / Testing",
+        "Software quality assurance through a Quality Center of Excellence",
+        "IV&V and software testing via the Quality Center of Excellence",
+        delivery_unit="Ampcus",
     ),
-    _fact(
-        "services",
-        "AI Strategy Consulting",
-        description="External AI strategy consulting for enterprise and strategic clients",
-        detail_1="External · Product,Engineering · business hours · launched 2024",
-        detail_2="SOC2 · ~55 monthly queries · status beta",
-        type="External",
-        departments="Product,Engineering",
-        availability="Business hours",
-        compliance_tags="SOC2",
-        users="Enterprise and Strategic clients",
-        launched_year=2024,
-        monthly_queries=55,
-        status="beta",
+    _service(
+        "Staffing Services",
+        "Contingent labor, project staffing, and full-time placement",
+        "Contingent labor, project staffing, and full-time placement via iTech and Bravens",
+        delivery_unit="Ampcus",
     ),
-    # —— Locations (6) ——
+    # —— Locations (U.S. offices + global portfolio) ——
+    *[
+        _location(city, state, is_headquarters=is_hq)
+        for city, state, is_hq in _US_OFFICES
+    ],
     _fact(
         "locations",
-        "New York HQ",
-        description="Ampcus headquarters in New York, USA",
-        detail_1="Headquarters · 350 employees · EST · opened 2015 · 28,000 sq ft",
-        detail_2="Departments: Engineering, Product, Legal, HR",
-        type="Headquarters",
-        city="New York",
-        state="NY",
-        country="USA",
-        timezone="EST",
-        employee_count=350,
-        departments="Engineering,Product,Legal,HR",
-        opened_year=2015,
-        sq_footage=28000,
+        "U.S. Office Network",
+        description="Ampcus U.S. office footprint across 18 offices",
+        detail_1="18 U.S. offices · headquarters in Chantilly, VA",
+        detail_2="Full city list on Ampcus Contact page",
+        type="Portfolio summary",
+        region="United States",
+        office_count=18,
+        seed_revision=SEED_REVISION,
         status="active",
     ),
     _fact(
         "locations",
-        "Austin Delivery Center",
-        description="US delivery and customer success hub in Austin, Texas",
-        detail_1="Delivery center · 120 employees · CST · opened 2021 · 9,500 sq ft",
-        detail_2="Departments: Customer Success, Operations",
-        type="Delivery center",
-        city="Austin",
-        state="TX",
-        country="USA",
-        timezone="CST",
-        employee_count=120,
-        departments="Customer Success,Operations",
-        opened_year=2021,
-        sq_footage=9500,
+        "Global Office Network",
+        description="Ampcus international office presence",
+        detail_1="20 global offices worldwide",
+        detail_2="Specific international addresses not listed on the public Contact page",
+        type="Portfolio summary",
+        region="Global",
+        office_count=20,
         status="active",
     ),
     _fact(
         "locations",
-        "London Office",
-        description="UK regional office in London",
-        detail_1="Regional office · 65 employees · GMT · opened 2022 · 4,200 sq ft",
-        detail_2="Departments: Sales, Compliance, Legal",
-        type="Regional office",
-        city="London",
-        state="England",
-        country="UK",
-        timezone="GMT",
-        employee_count=65,
-        departments="Sales,Compliance,Legal",
-        opened_year=2022,
-        sq_footage=4200,
+        "Innovation Labs",
+        description="Ampcus innovation lab locations",
+        detail_1="2 innovation labs",
+        detail_2="Part of Ampcus global innovation footprint",
+        type="Innovation lab",
+        region="Global",
+        lab_count=2,
         status="active",
     ),
     _fact(
         "locations",
-        "Bangalore Tech Hub",
-        description="Engineering hub in Bangalore, India",
-        detail_1="Engineering hub · 210 employees · IST · opened 2023 · 12,000 sq ft",
-        detail_2="Departments: Engineering, QA, DevOps",
-        type="Engineering hub",
-        city="Bangalore",
-        state="Karnataka",
+        "Nashik Campus",
+        description="New Ampcus campus investment in Nashik, India",
+        detail_1="Planned campus · Nashik, India",
+        detail_2="Ongoing investment noted on Ampcus About page",
+        type="Campus (planned)",
+        city="Nashik",
+        state="Maharashtra",
         country="India",
-        timezone="IST",
-        employee_count=210,
-        departments="Engineering,QA,DevOps",
-        opened_year=2023,
-        sq_footage=12000,
-        status="active",
+        region="Global",
+        status="planned",
+    ),
+    # —— Infrastructure (office printers & conference rooms) ——
+    _fact(
+        "infrastructure",
+        "Office Printer",
+        description="TOSHIBA e-STUDIO3505AC-11965425",
+        detail_1="IPP http://10.1.0.22:50081/ipp/print",
+        detail_2="Color · duplex · staple · chat 'print this' with PDF upload",
+        resource_type="printer",
+        model="Toshiba e-STUDIO3505AC",
+        ipp_port=50081,
+        printer_ip="10.1.0.22",
     ),
     _fact(
-        "locations",
-        "Toronto Office",
-        description="Canada regional office in Toronto",
-        detail_1="Regional office · 45 employees · EST · opened 2023 · 2,800 sq ft",
-        detail_2="Departments: Sales, HR",
-        type="Regional office",
-        city="Toronto",
-        state="Ontario",
-        country="Canada",
-        timezone="EST",
-        employee_count=45,
-        departments="Sales,HR",
-        opened_year=2023,
-        sq_footage=2800,
-        status="active",
+        "infrastructure",
+        "Conference Room A",
+        description="12-seat Teams Room with HDMI and video conferencing",
+        detail_1="12 capacity · Teams Room",
+        detail_2="Book via chat or Outlook calendar",
+        resource_type="conference_room",
+        capacity=12,
+        av_equipment="Teams Room, HDMI",
     ),
     _fact(
-        "locations",
-        "Singapore Hub",
-        description="APAC hub in Singapore",
-        detail_1="APAC hub · 38 employees · SGT · opened 2024 · 2,100 sq ft",
-        detail_2="Departments: Sales, Customer Success",
-        type="APAC hub",
-        city="Singapore",
-        state="Singapore",
-        country="Singapore",
-        timezone="SGT",
-        employee_count=38,
-        departments="Sales,Customer Success",
-        opened_year=2024,
-        sq_footage=2100,
-        status="active",
+        "infrastructure",
+        "Conference Room B",
+        description="6-seat conference room with display",
+        detail_1="6 capacity",
+        detail_2="HDMI display — bring your laptop",
+        resource_type="conference_room",
+        capacity=6,
+        av_equipment="HDMI display",
     ),
     # —— Products (6) ——
     _fact(
@@ -520,156 +559,53 @@ _SEED: List[Dict[str, Any]] = [
         monthly_users=89,
         status="active",
     ),
-    # —— Team (6) ——
-    _fact(
-        "team",
-        "Sarah Chen",
-        description="Chief Technology Officer leading Engineering from New York HQ",
-        detail_1="CTO · Engineering · New York HQ · joined 2017",
-        detail_2="Expertise: AI, Cloud Architecture, Security",
-        title="Chief Technology Officer",
-        department="Engineering",
-        location="New York HQ",
-        expertise="AI,Cloud Architecture,Security",
-        joined_year=2017,
-        status="active",
+    # —— Team (22) ——
+    _team('Anjali "Ann" Ramakumaran', "Founder and Group CEO", "Ampcus"),
+    _team("Salil Sankaran", "Group President", "Ampcus"),
+    _team("Ramana Challa", "Chief Operating Officer", "Operations"),
+    _team("Charles McMahon", "Executive Vice President", "Ampcus"),
+    _team("Danielle Gardiner", "Chief Forensics Officer", "Ampcus Forensics"),
+    _team("Chris Brosnan", "Chief Revenue Officer", "Ampcus Cyber — US"),
+    _team("Joe Scarlato", "Executive Vice President", "Ampcus Forensics"),
+    _team("Biju George", "Executive Vice President", "SLED and Utilities"),
+    _team("Donna Howell", "Senior Vice President", "Customer Success"),
+    _team("Samir Sankaran", "Senior Vice President", "Federal Operations and Delivery"),
+    _team("Sanjeev Chauhan", "Senior Vice President", "Enterprise Solutions"),
+    _team("Carlos Rivera", "Senior Vice President", "Ampcus Forensics — LATAM"),
+    _team("Phani Kumar", "Senior Vice President", "Client Partner"),
+    _team("Jim Jacobsen", "Senior Vice President", "Business Development"),
+    _team("Karen Kok", "Senior Vice President", "Ampcus"),
+    _team("Oma Taiga", "Vice President", "Quality Center of Excellence"),
+    _team("Kamal Vadrevu", "Vice President", "Customer Success"),
+    _team("Rashme Vohra", "Vice President", "Client Partner"),
+    _team("Shweta Bhanot", "Vice President", "Client Partner"),
+    _team("Julie Potter", "Vice President of Sales", "Sales"),
+    _team("Abhishek Gautam", "Vice President", "Client Partner"),
+    _team("Laurie Smith", "Senior Manager", "Human Resources"),
+    # —— Partnerships (18 — Ampcus Partners page) ——
+    _partner("SAP", "Enterprise software & platforms"),
+    _partner("Oracle", "Enterprise software & platforms"),
+    _partner("Salesforce", "Enterprise software & platforms"),
+    _partner("Appian", "Enterprise software & platforms"),
+    _partner("VMware", "Enterprise software & platforms"),
+    _partner("UiPath", "Automation & AI"),
+    _partner("Snowflake", "Automation & AI"),
+    _partner("BlackBerry", "Cybersecurity & communications"),
+    _partner("Avaya", "Cybersecurity & communications"),
+    _partner("Cisco", "Cybersecurity & communications"),
+    _partner("Ruckus", "Cybersecurity & communications"),
+    _partner("SAS", "Analytics"),
+    _partner("Terremark", "Cloud & infrastructure"),
+    _partner("ns2", "Cloud & infrastructure"),
+    _partner("Carpathia", "Cloud & infrastructure"),
+    _partner(
+        "Microsoft",
+        "Technology alliance",
+        description="Microsoft technology alliance partner",
+        alliance_level="Gold Partner",
     ),
-    _fact(
-        "team",
-        "Marcus Williams",
-        description="Head of Compliance based at New York HQ",
-        detail_1="Head of Compliance · Compliance · New York HQ · joined 2019",
-        detail_2="Expertise: GDPR, SOC2, HIPAA, PCI",
-        title="Head of Compliance",
-        department="Compliance",
-        location="New York HQ",
-        expertise="GDPR,SOC2,HIPAA,PCI",
-        joined_year=2019,
-        status="active",
-    ),
-    _fact(
-        "team",
-        "Priya Nair",
-        description="VP Engineering based at Bangalore Tech Hub",
-        detail_1="VP Engineering · Engineering · Bangalore Tech Hub · joined 2023",
-        detail_2="Expertise: Backend, AI, Platform",
-        title="VP Engineering",
-        department="Engineering",
-        location="Bangalore Tech Hub",
-        expertise="Backend,AI,Platform",
-        joined_year=2023,
-        status="active",
-    ),
-    _fact(
-        "team",
-        "David Osei",
-        description="Head of Legal based at London Office",
-        detail_1="Head of Legal · Legal · London Office · joined 2022",
-        detail_2="Expertise: Employment Law, Contracts, IP",
-        title="Head of Legal",
-        department="Legal",
-        location="London Office",
-        expertise="Employment Law,Contracts,IP",
-        joined_year=2022,
-        status="active",
-    ),
-    _fact(
-        "team",
-        "Rachel Torres",
-        description="Head of HR based at New York HQ",
-        detail_1="Head of HR · HR · New York HQ · joined 2020",
-        detail_2="Expertise: Policy, Talent, L&D",
-        title="Head of HR",
-        department="HR",
-        location="New York HQ",
-        expertise="Policy,Talent,L&D",
-        joined_year=2020,
-        status="active",
-    ),
-    _fact(
-        "team",
-        "James Kwon",
-        description="Head of Customer Success based at Austin Delivery Center",
-        detail_1="Head of Customer Success · Austin Delivery Center · joined 2021",
-        detail_2="Expertise: Client Relations, Onboarding, SLA",
-        title="Head of Customer Success",
-        department="Customer Success",
-        location="Austin Delivery Center",
-        expertise="Client Relations,Onboarding,SLA",
-        joined_year=2021,
-        status="active",
-    ),
-    # —— Partnerships (5) ——
-    _fact(
-        "partnerships",
-        "Anthropic",
-        description="Technology vendor providing Claude API for Ampcus AI products",
-        detail_1="Technology vendor · Claude API · Enterprise tier · since 2024",
-        detail_2="Used for AI Helpdesk Platform, AI Query Engine, AI Strategy Consulting",
-        type="Technology vendor",
-        product="Claude API",
-        used_for="AI Helpdesk Platform,AI Query Engine,AI Strategy Consulting",
-        contract_tier="Enterprise",
-        since_year=2024,
-        compliance_tags="SOC2",
-        status="active",
-    ),
-    _fact(
-        "partnerships",
-        "AWS",
-        description="Cloud infrastructure partner for Ampcus platform hosting",
-        detail_1="Cloud infrastructure · EC2,S3,RDS,Lambda · Enterprise · since 2019",
-        detail_2="Used for all platform infrastructure · SOC2,ISO27001,HIPAA",
-        type="Cloud infrastructure",
-        product="EC2,S3,RDS,Lambda",
-        used_for="All platform infrastructure",
-        contract_tier="Enterprise",
-        since_year=2019,
-        compliance_tags="SOC2,ISO27001,HIPAA",
-        status="active",
-    ),
-    _fact(
-        "partnerships",
-        "Salesforce",
-        description="CRM platform partner for sales and client management",
-        detail_1="CRM platform · Sales Cloud, Service Cloud · Business · since 2020",
-        detail_2="Used for client management and sales pipeline · SOC2",
-        type="CRM platform",
-        product="Sales Cloud,Service Cloud",
-        used_for="Client management,Sales pipeline",
-        contract_tier="Business",
-        since_year=2020,
-        compliance_tags="SOC2",
-        status="active",
-    ),
-    _fact(
-        "partnerships",
-        "Okta",
-        description="Identity provider for employee and client portal authentication",
-        detail_1="Identity provider · SSO,MFA,Directory · Business · since 2021",
-        detail_2="Used for employee authentication and client portal access · SOC2,FedRAMP",
-        type="Identity provider",
-        product="SSO,MFA,Directory",
-        used_for="Employee authentication,Client portal access",
-        contract_tier="Business",
-        since_year=2021,
-        compliance_tags="SOC2,FedRAMP",
-        status="active",
-    ),
-    _fact(
-        "partnerships",
-        "ServiceNow",
-        description="IT service management partner for IT and HR workflows",
-        detail_1="ITSM · ITSM, HR Service Delivery · Enterprise · since 2022",
-        detail_2="Used for IT ticketing and HR requests · SOC2,ISO27001",
-        type="IT service management",
-        product="ITSM,HR Service Delivery",
-        used_for="IT ticketing,HR requests",
-        contract_tier="Enterprise",
-        since_year=2022,
-        compliance_tags="SOC2,ISO27001",
-        status="active",
-    ),
+    _partner("Alliance for Science", "Community & advocacy"),
+    _partner("Diversity Alliance", "Community & advocacy"),
 ]
 
 
@@ -683,18 +619,58 @@ def _ensure_details_column(conn) -> None:
         conn.execute("ALTER TABLE company_facts ADD COLUMN details TEXT")
 
 
+def _seed_is_current(conn) -> bool:
+    """True when DB matches the current seed revision and row count."""
+    total = conn.execute("SELECT COUNT(*) AS n FROM company_facts").fetchone()["n"]
+    if int(total or 0) < len(_SEED):
+        return False
+    marker = conn.execute(
+        """
+        SELECT details FROM company_facts
+        WHERE category = 'services' AND name = 'AI, GenAI & Agentic AI'
+        LIMIT 1
+        """
+    ).fetchone()
+    if not marker:
+        return False
+    hq = conn.execute(
+        """
+        SELECT details FROM company_facts
+        WHERE category = 'locations' AND name = 'Chantilly, VA'
+        LIMIT 1
+        """
+    ).fetchone()
+    if not hq:
+        return False
+    try:
+        hq_details = json.loads(hq["details"] or "{}")
+    except json.JSONDecodeError:
+        return False
+    if not hq_details.get("is_headquarters"):
+        return False
+    rev = conn.execute(
+        """
+        SELECT details FROM company_facts
+        WHERE category = 'locations' AND name = 'U.S. Office Network'
+        LIMIT 1
+        """
+    ).fetchone()
+    if not rev:
+        return False
+    try:
+        rev_details = json.loads(rev["details"] or "{}")
+    except json.JSONDecodeError:
+        return False
+    return int(rev_details.get("seed_revision") or 0) == SEED_REVISION
+
+
 def seed_company_facts_if_empty() -> int:
-    """Upsert the official Ampcus company-facts seed (40 rows across 6 categories)."""
+    """Upsert the official Ampcus company-facts seed."""
     init_audit_db()
     with _lock:
         with connect() as conn:
             _ensure_details_column(conn)
-            team_n = conn.execute(
-                "SELECT COUNT(*) AS n FROM company_facts WHERE category = 'team'"
-            ).fetchone()["n"]
-            total = conn.execute("SELECT COUNT(*) AS n FROM company_facts").fetchone()["n"]
-            # Refresh when empty, missing new categories, or still on the old 9-row seed
-            if int(total or 0) > 0 and int(team_n or 0) > 0 and int(total or 0) >= len(_SEED) - 1:
+            if _seed_is_current(conn):
                 return 0
 
             placeholders = ",".join("?" for _ in SEED_CATEGORIES)

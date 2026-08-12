@@ -148,6 +148,57 @@ def reservation_node(state: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
+def infrastructure_info_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    timings = ensure_timings(state)
+    with timed(timings, "infrastructure_info"):
+        from app.infrastructure.info_agent import run_infrastructure_info_query
+
+        result = run_infrastructure_info_query(
+            query=state.get("query") or "",
+            normalized_query=state.get("normalized_query") or "",
+            user_email=str(state.get("user_email") or ""),
+            user_role=str(state.get("user_role") or "employee"),
+            model_preference=state.get("model_preference"),
+            session_id=state.get("session_id"),
+            conversation_history=list(state.get("conversation_history") or []),
+        )
+        node_timings = dict(result.get("node_timings") or {})
+        node_timings.update(timings)
+        usage = merge_token_usage(state.get("token_usage"), result.get("token_usage") or {})
+        return {
+            "answer": result.get("answer") or "",
+            "department": result.get("department") or "it",
+            "severity": result.get("severity") or "routine",
+            "sources": list(result.get("sources") or []),
+            "model_used": result.get("model_used") or "infrastructure_info",
+            "context_used": bool(result.get("context_used")),
+            "token_usage": usage,
+            "node_timings": node_timings,
+        }
+
+
+def infrastructure_action_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    timings = ensure_timings(state)
+    with timed(timings, "infrastructure_action"):
+        from app.infrastructure.infrastructure_agent import handle_infrastructure_action
+
+        result = handle_infrastructure_action(
+            user_email=str(state.get("user_email") or ""),
+            query=state.get("query") or "",
+            session_id=state.get("session_id"),
+            has_document=bool(state.get("has_document")),
+        )
+        return {
+            "answer": result.get("answer") or "",
+            "department": result.get("department") or "it",
+            "severity": "routine",
+            "model_used": result.get("model_used") or "infrastructure_action",
+            "context_used": False,
+            "token_usage": state.get("token_usage") or {},
+            "node_timings": timings,
+        }
+
+
 def semantic_cache_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
     timings = ensure_timings(state)
     settings = get_settings()

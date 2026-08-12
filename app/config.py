@@ -94,6 +94,17 @@ class Settings(BaseSettings):
     reservation_reminder_poll_seconds: float = 300.0
     reservation_auto_approve_hours: int = 24
 
+    # Office infrastructure — IPP printing
+    print_enabled: bool = True
+    print_ipp_timeout_seconds: float = 30.0
+    print_simulate_when_unreachable: bool = True
+
+    # Conference room booking (Microsoft Graph)
+    microsoft_tenant_id: str = ""
+    microsoft_client_id: str = ""
+    microsoft_client_secret: str = ""
+    conference_room_booking_enabled: bool = False
+
     @property
     def escalate_department_list(self) -> List[str]:
         return [d.strip().lower() for d in self.escalate_departments.split(",") if d.strip()]

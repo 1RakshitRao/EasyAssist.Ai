@@ -171,13 +171,31 @@ def test_output_review_blocks_failed_sql():
 
 def test_seed_company_facts(nlp_db):
     facts = list_facts(active_only=False)
-    assert len(facts) >= 40
+    assert len(facts) >= 85
     cats = {f["category"] for f in facts}
     assert {"clients", "services", "locations", "products", "team", "partnerships"} <= cats
     active_clients = [f for f in facts if f["category"] == "clients" and f["active"] == 1]
     assert len(active_clients) == 9  # Redwood inactive
-    assert any(f["name"] == "Sarah Chen" for f in facts)
-    assert any(f["name"] == "Anthropic" for f in facts)
+    services = [f for f in facts if f["category"] == "services" and f["active"] == 1]
+    assert len(services) == 7
+    locations = [f for f in facts if f["category"] == "locations" and f["active"] == 1]
+    assert len(locations) == 23  # 19 U.S. cities + 4 portfolio rows
+    partnerships = [f for f in facts if f["category"] == "partnerships" and f["active"] == 1]
+    assert len(partnerships) == 18
+    team = [f for f in facts if f["category"] == "team" and f["active"] == 1]
+    assert len(team) == 22
+    assert any(f["name"] == 'Anjali "Ann" Ramakumaran' for f in facts)
+    assert any(f["name"] == "Microsoft" for f in facts)
+    assert any(f["name"] == "Chantilly, VA" for f in facts)
+
+
+def test_ceo_question_filters_to_leadership():
+    from app.nlp_query.sql_agent import heuristic_company_facts_sql
+
+    sql = heuristic_company_facts_sql("Who is the CEO?")
+    assert "category = 'team'" in sql
+    assert "group ceo" in sql.lower()
+    assert "LIMIT 3" in sql or "LIMIT 5" in sql
 
 
 def test_cto_question_filters_to_one_person():
@@ -231,7 +249,7 @@ def test_nlp_audit_records_token_cost(monkeypatch, tmp_path):
             sql="SELECT name FROM company_facts LIMIT 1",
             sql_formatted="SELECT name\nFROM company_facts\nLIMIT 1",
             columns=["name"],
-            rows=[{"name": "Sarah Chen"}],
+            rows=[{"name": 'Anjali "Ann" Ramakumaran'}],
             model_used="heuristic",
             token_usage={},
         ),
@@ -240,7 +258,7 @@ def test_nlp_audit_records_token_cost(monkeypatch, tmp_path):
         "app.nlp_query.orchestrator.review_output",
         lambda **_k: OutputDecision(
             allowed=True,
-            answer="Sarah Chen is the CTO.",
+            answer='Anjali "Ann" Ramakumaran is the Group CEO.',
             reason="ok",
             model_used="claude-haiku-4-5-20251001",
             token_usage={"input_tokens": 120, "output_tokens": 40},

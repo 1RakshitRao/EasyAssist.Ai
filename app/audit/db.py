@@ -291,6 +291,38 @@ CREATE INDEX IF NOT EXISTS idx_reservations_employee ON reservations(employee_em
 CREATE INDEX IF NOT EXISTS idx_reservations_status ON reservations(status);
 CREATE INDEX IF NOT EXISTS idx_reservations_dates ON reservations(checkin_date, checkout_date);
 CREATE INDEX IF NOT EXISTS idx_audit_reservation ON reservation_audit(reservation_id);
+
+CREATE TABLE IF NOT EXISTS office_printers (
+    id TEXT PRIMARY KEY,
+    office_location TEXT NOT NULL,
+    printer_name TEXT NOT NULL,
+    printer_ip TEXT NOT NULL,
+    ipp_port INTEGER NOT NULL DEFAULT 631,
+    ipp_path TEXT NOT NULL DEFAULT '/ipp/print',
+    model TEXT,
+    floor TEXT,
+    notes TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_office_printers_location
+ON office_printers(office_location, active);
+
+CREATE TABLE IF NOT EXISTS conference_rooms (
+    id TEXT PRIMARY KEY,
+    office_location TEXT NOT NULL,
+    room_name TEXT NOT NULL,
+    room_email TEXT NOT NULL,
+    capacity INTEGER NOT NULL DEFAULT 4,
+    floor TEXT,
+    av_equipment_json TEXT DEFAULT '[]',
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_conference_rooms_office
+ON conference_rooms(office_location, active);
 """
 
 
@@ -407,3 +439,8 @@ def _migrate_chat_sessions(conn: sqlite3.Connection) -> None:
             "ALTER TABLE chat_sessions ADD COLUMN pending_reservation_json TEXT"
         )
         logger.info("Added chat_sessions.pending_reservation_json column")
+    if "pending_infrastructure_json" not in cols:
+        conn.execute(
+            "ALTER TABLE chat_sessions ADD COLUMN pending_infrastructure_json TEXT"
+        )
+        logger.info("Added chat_sessions.pending_infrastructure_json column")

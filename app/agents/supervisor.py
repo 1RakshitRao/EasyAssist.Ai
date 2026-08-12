@@ -19,6 +19,8 @@ INTENTS = (
     "document_op",
     "onboarding_query",
     "reservation_query",
+    "infrastructure_info",
+    "infrastructure_action",
     "restricted",
     "out_of_scope",
 )
@@ -85,13 +87,40 @@ KEYWORD_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
         "reservation_query",
         (
             "guesthouse",
-            "book a room",
+            "guest house",
             "reservation",
             "available next",
             "check in",
             "check out",
             "cancel my booking",
             "modify my stay",
+        ),
+    ),
+    (
+        "infrastructure_info",
+        (
+            "where is the printer",
+            "nearest printer",
+            "conference room",
+            "meeting room",
+            "wifi password",
+            "wi-fi password",
+            "how do i connect to the conference",
+            "visitor parking",
+            "building access",
+            "how do i book conference",
+        ),
+    ),
+    (
+        "infrastructure_action",
+        (
+            "print this",
+            "print it",
+            "send to printer",
+            "book a meeting",
+            "book conference",
+            "reserve a room for",
+            "book a conference room",
         ),
     ),
     (
@@ -143,13 +172,13 @@ The user's role is provided to you. Use it to inform routing decisions.
 
 Return ONLY this JSON — no markdown, no explanation, nothing else:
 {{
-  "intent": "<one of the eight intents below>",
+  "intent": "<one of the ten intents below>",
   "confidence": "high | medium | low",
   "reason": "<one sentence explaining your decision>",
   "document_operation": "<summarize|takeaways|action_items|explain_simply|find_risks|ask_question|add_to_kb|null>"
 }}
 
-━━━ THE EIGHT INTENTS ━━━
+━━━ THE TEN INTENTS ━━━
 
 conversational
   Greetings, farewells, thank yous, small talk, questions about what
@@ -178,6 +207,19 @@ onboarding_query
 
 reservation_query
   Guesthouse booking, availability, cancellations, or guesthouse details.
+  Examples: "book the guesthouse for next week", "is the guesthouse available?"
+
+infrastructure_info
+  Questions about office infrastructure answerable from IT knowledge base:
+  printers, conference rooms, Wi-Fi, parking, building access, cafeteria.
+  Examples: "where is the nearest printer?", "how do I book Conference Room A?",
+  "what's the Wi-Fi password?", "where is visitor parking?"
+
+infrastructure_action
+  The employee wants to DO something with office infrastructure.
+  Examples: "print this document", "book a conference room tomorrow at 2pm",
+  "reserve a meeting room for 4 people"
+  NOT guesthouse — that is reservation_query.
 
 restricted
   User asks for data beyond their access level. Do not confirm data exists.
@@ -189,10 +231,12 @@ out_of_scope
 ━━━ ROUTING RULES ━━━
 
 1. Policy doc → helpdesk_query; company fact → nlp_query
-2. document_op requires uploaded document in session context
-3. onboarding_query only when joining_date is recent (within {onboarding_days} days)
-4. restricted takes priority over all other intents
-5. Never classify as out_of_scope if there is any work-related angle
+2. Office printer/room/parking questions → infrastructure_info; print/book actions → infrastructure_action
+3. Guesthouse → reservation_query; conference/meeting room → infrastructure_info or infrastructure_action
+4. document_op requires uploaded document in session context
+5. onboarding_query only when joining_date is recent (within {onboarding_days} days)
+6. restricted takes priority over all other intents
+7. Never classify as out_of_scope if there is any work-related angle
 """
 
 
