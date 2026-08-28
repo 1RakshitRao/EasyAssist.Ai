@@ -44,6 +44,7 @@ def _supervisor_payload(intent: str, **extra) -> MagicMock:
         ("reservation_query", "reservation"),
         ("infrastructure_info", "infrastructure_info"),
         ("infrastructure_action", "infrastructure_action"),
+        ("security_incident", "security_incident"),
         ("restricted", "block"),
         ("out_of_scope", "decline"),
     ],
@@ -149,3 +150,35 @@ def test_onboarding_checklist_no_ticket(client, admin_headers, employee_headers)
     assert "onboarding" in (data.get("answer") or "").lower() or "task" in (
         data.get("answer") or ""
     ).lower()
+
+
+def test_inline_paste_summarize_end_to_end(client, employee_headers):
+    from tests.test_inline_text import GAZA_EXHIBITION_BODY
+
+    from app.agents.graph import reset_graph
+    from app.documents.analysis_agent import AnalysisResult
+
+    reset_graph()
+    query = f"{GAZA_EXHIBITION_BODY}\n\nSummarize this"
+
+    with patch(
+        "app.documents.analysis_agent.analyze_document",
+        return_value=AnalysisResult(
+            operation="summarize",
+            result="Summary of the Gaza exhibition at the Institut du monde arabe.",
+            model_used="test-model",
+            token_usage={"input_tokens": 100, "output_tokens": 50},
+        ),
+    ):
+        res = client.post(
+            "/query",
+            headers=employee_headers,
+            json={"question": query},
+        )
+
+    assert res.status_code == 200, res.text
+    data = res.json()
+    assert data.get("intent") == "document_op"
+    answer = (data.get("answer") or "").lower()
+    assert "upload" not in answer or "gaza" in answer or "exhibition" in answer
+    assert "summary" in answer or "institut" in answer

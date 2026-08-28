@@ -6,8 +6,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Dict
 
-from app.config import get_settings
-from app.llm.client import complete, resolve_answer_model
+from app.llm.client import complete, is_llm_configured, resolve_tier_model
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +69,6 @@ def analyze_document(
     if op == "ask" and not (question or "").strip():
         raise ValueError("question is required for ask operation")
 
-    settings = get_settings()
     doc = _truncate(text)
     instruction = _PROMPTS[op]
     system = (
@@ -88,8 +86,7 @@ def analyze_document(
     user_parts.append("Document:\n" + doc)
     user_msg = "\n\n".join(user_parts)
 
-    # Offline fallback when Anthropic selected but no key
-    if settings.llm_provider.lower() == "anthropic" and not settings.anthropic_api_key:
+    if not is_llm_configured():
         preview = doc[:800].strip()
         return AnalysisResult(
             operation=op,
@@ -98,7 +95,7 @@ def analyze_document(
             token_usage={},
         )
 
-    model = resolve_answer_model("routine", preference="routine")
+    model = resolve_tier_model("balanced")
     try:
         result = complete(
             model=model,

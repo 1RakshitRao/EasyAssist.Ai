@@ -9,7 +9,11 @@ from typing import Any, Dict, List, Literal, Optional
 from app.agents.graph import run_pipeline
 from app.config import get_settings
 from app.onboarding import store
-from app.onboarding.reminder_templates import build_checklist_response, build_welcome_message
+from app.onboarding.reminder_templates import (
+    build_checklist_payload,
+    build_checklist_response,
+    build_welcome_message,
+)
 
 SubIntent = Literal["show_checklist", "mark_complete", "ask_question"]
 
@@ -224,14 +228,19 @@ def handle_onboarding_query(
     store.set_onboarding_started_at(user_email)
     tasks = store.get_tasks(user_email)
     sub_intent = detect_sub_intent(query)
+    from app.audit.query_trace import get_tracer
+
+    if tracer := get_tracer():
+        tracer.agent_step("ONBOARDING", f"sub-intent={sub_intent}")
 
     if sub_intent == "show_checklist":
         body = build_checklist_response(employee, tasks)
+        checklist = build_checklist_payload(employee, tasks)
         if include_welcome:
             body = build_welcome_message(employee, tasks) if is_generic_opener(query) else (
                 build_welcome_message(employee, tasks) + "\n\n" + body
             )
-        return _onboarding_result(body, sub_intent=sub_intent)
+        return _onboarding_result(body, sub_intent=sub_intent, onboarding_checklist=checklist)
 
     if sub_intent == "mark_complete":
         task_key = extract_task_key(query, tasks)
@@ -247,23 +256,30 @@ def handle_onboarding_query(
             body = "That task wasn't found on your checklist."
             return _onboarding_result(body, sub_intent=sub_intent)
 
+        fresh_tasks = store.get_tasks(user_email)
         remaining = store.count_pending_tasks(user_email)
         title = updated.get("task_title") or task_key
+        checklist = build_checklist_payload(employee, fresh_tasks)
         if remaining == 0:
             body = (
                 f"🎉 You've completed all your onboarding tasks! Welcome to the team.\n"
-                f"{title} was your last item."
+                f"{title} was your last item.\n\n"
+                f"{build_checklist_response(employee, fresh_tasks)}"
             )
         else:
             body = (
                 f"Great! {title} is marked complete. "
-                f"You have {remaining} task{'s' if remaining != 1 else ''} remaining."
+                f"You have {remaining} task{'s' if remaining != 1 else ''} remaining.\n\n"
+                f"{build_checklist_response(employee, fresh_tasks)}"
             )
         if include_welcome and not is_generic_opener(query):
-            body = build_welcome_message(employee, store.get_tasks(user_email)) + "\n\n" + body
+            body = build_welcome_message(employee, fresh_tasks) + "\n\n" + body
         elif include_welcome and is_generic_opener(query):
-            body = build_welcome_message(employee, store.get_tasks(user_email))
-        return _onboarding_result(body, sub_intent=sub_intent)
+            body = build_welcome_message(employee, fresh_tasks)
+            checklist = build_checklist_payload(employee, fresh_tasks)
+        return _onboarding_result(
+            body, sub_intent=sub_intent, onboarding_checklist=checklist
+        )
 
     # ask_question → checklist task guidance when we can match a task, else RAG
     matched_key = extract_task_key(query, tasks)
@@ -271,11 +287,16 @@ def handle_onboarding_query(
         matched = next((t for t in tasks if t.get("task_key") == matched_key), None)
         if matched:
             body = _task_guidance(matched)
+            checklist = None
             if include_welcome and not is_generic_opener(query):
                 body = build_welcome_message(employee, tasks) + "\n\n" + body
+                checklist = build_checklist_payload(employee, tasks)
             elif include_welcome and is_generic_opener(query):
                 body = build_welcome_message(employee, tasks)
-            return _onboarding_result(body, sub_intent="ask_question")
+                checklist = build_checklist_payload(employee, tasks)
+            return _onboarding_result(
+                body, sub_intent="ask_question", onboarding_checklist=checklist
+            )
 
     rag = run_pipeline(
         query=query,
@@ -290,8 +311,10 @@ def handle_onboarding_query(
     answer = rag.get("answer") or ""
     if answer and not answer.startswith("For your onboarding"):
         answer = f"For your onboarding:\n\n{answer}"
+    checklist = None
     if include_welcome:
         welcome = build_welcome_message(employee, tasks)
+        checklist = build_checklist_payload(employee, tasks)
         if is_generic_opener(query):
             answer = welcome
         else:
@@ -299,11 +322,18 @@ def handle_onboarding_query(
     rag["answer"] = answer
     rag["model_used"] = rag.get("model_used") or "onboarding_rag"
     rag["sub_intent"] = "ask_question"
+    if checklist:
+        rag["onboarding_checklist"] = checklist
     return rag
 
 
-def _onboarding_result(answer: str, *, sub_intent: str) -> Dict[str, Any]:
-    return {
+def _onboarding_result(
+    answer: str,
+    *,
+    sub_intent: str,
+    onboarding_checklist: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
         "answer": answer,
         "department": "hr",
         "severity": "routine",
@@ -318,3 +348,6 @@ def _onboarding_result(answer: str, *, sub_intent: str) -> Dict[str, Any]:
         "attempted_depts": [],
         "retry_count": 0,
     }
+    if onboarding_checklist:
+        payload["onboarding_checklist"] = onboarding_checklist
+    return payload

@@ -70,4 +70,6 @@ def run_infrastructure_info_query(
         "context_used": bool(state.get("context_used")),
         "token_usage": dict(state.get("token_usage") or {}),
         "node_timings": dict(state.get("node_timings") or {}),
+        "pending_ticket_confirmation": bool(state.get("pending_ticket_confirmation")),
+        "pending_ticket_payload": state.get("pending_ticket_payload"),
     }

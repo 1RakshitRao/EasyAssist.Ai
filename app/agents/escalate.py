@@ -6,6 +6,7 @@ import logging
 from typing import Any, Dict
 
 from app.agents.timing import ensure_timings, timed
+from app.audit.query_trace import tracer_from_state
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,9 @@ def should_open_high_ticket(severity: str) -> bool:
 
 def escalate_node(state: Dict[str, Any]) -> Dict[str, Any]:
     timings = ensure_timings(state)
+    tracer = tracer_from_state(state)
+    if tracer:
+        tracer.agent_started("ESCALATION", "Evaluating escalation criteria")
     with timed(timings, "escalate"):
         department = (state.get("department") or "").lower()
         severity = state.get("severity") or "routine"
@@ -48,6 +52,9 @@ def escalate_node(state: Dict[str, Any]) -> Dict[str, Any]:
             department,
             severity,
         )
+        if tracer:
+            tracer.escalated(None, [f"{department.upper()} desk"])
+            tracer.agent_done("ESCALATION", "High severity flagged for ticket confirm")
         return {
             "escalated": True,
             "escalation_reason": user_reason,

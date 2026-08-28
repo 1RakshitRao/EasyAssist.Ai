@@ -1,7 +1,10 @@
 from functools import lru_cache
 from typing import List
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_SUPPORTED_LLM_PROVIDERS = frozenset({"groq", "grok", "anthropic"})
 
 
 class Settings(BaseSettings):
@@ -11,18 +14,62 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # anthropic | ollama
-    llm_provider: str = "ollama"
+    # groq | grok | anthropic (Ollama is not supported)
+    llm_provider: str = "groq"
+    groq_api_key: str = ""
+    xai_api_key: str = ""
     anthropic_api_key: str = ""
-    ollama_base_url: str = "http://127.0.0.1:11434"
-    ollama_timeout_seconds: float = 120.0
 
-    # Role → model. Defaults simulate Haiku / Sonnet / Opus on local Ollama.
-    # Anthropic: set LLM_PROVIDER=anthropic and use claude-* model ids.
-    classifier_model: str = "llama3.2:latest"  # Haiku role
-    answer_model_routine: str = "llama3.2:latest"  # Haiku role
-    answer_model_high: str = "mistral:latest"  # Sonnet role
-    answer_model_opus: str = "llama3.1:8b"  # Opus role
+    @field_validator("llm_provider")
+    @classmethod
+    def validate_llm_provider(cls, value: str) -> str:
+        provider = (value or "groq").lower().strip()
+        if provider == "ollama":
+            raise ValueError(
+                "LLM_PROVIDER=ollama is no longer supported. "
+                "Use groq (default), grok, or anthropic."
+            )
+        if provider not in _SUPPORTED_LLM_PROVIDERS:
+            raise ValueError(
+                f"Unsupported LLM_PROVIDER: {provider!r}. "
+                f"Supported: {', '.join(sorted(_SUPPORTED_LLM_PROVIDERS))}."
+            )
+        return provider
+
+    # Groq tier models (default when LLM_PROVIDER=groq)
+    groq_model_fast: str = "openai/gpt-oss-20b"
+    groq_model_balanced: str = "openai/gpt-oss-120b"
+    groq_model_powerful: str = "openai/gpt-oss-120b"
+    groq_model_guardrails: str = "llama-prompt-guard-2-86m"
+
+    # Grok tier models (when LLM_PROVIDER=grok)
+    grok_model_fast: str = "grok-4.1-fast"
+    grok_model_balanced: str = "grok-4.3"
+    grok_model_powerful: str = "grok-4.6"
+
+    # Anthropic role → model (when LLM_PROVIDER=anthropic)
+    classifier_model: str = "claude-haiku-4-5"
+    answer_model_routine: str = "claude-haiku-4-5"
+    answer_model_high: str = "claude-sonnet-4-6"
+    answer_model_opus: str = "claude-sonnet-4-6"
+
+    # Groq list prices (USD / million tokens) for cost dashboard
+    price_groq_fast_input_per_mtok: float = 0.075
+    price_groq_fast_output_per_mtok: float = 0.30
+    price_groq_balanced_input_per_mtok: float = 0.15
+    price_groq_balanced_output_per_mtok: float = 0.60
+    price_groq_powerful_input_per_mtok: float = 0.15
+    price_groq_powerful_output_per_mtok: float = 0.60
+    price_groq_guardrails_input_per_mtok: float = 0.04
+    price_groq_guardrails_output_per_mtok: float = 0.04
+
+    # Grok list prices (USD / million tokens) for cost dashboard
+    price_grok_fast_input_per_mtok: float = 0.20
+    price_grok_fast_output_per_mtok: float = 0.50
+    price_grok_balanced_input_per_mtok: float = 1.25
+    price_grok_balanced_output_per_mtok: float = 2.50
+    price_grok_powerful_input_per_mtok: float = 2.00
+    price_grok_powerful_output_per_mtok: float = 6.00
 
     redis_url: str = ""
     cache_ttl_seconds: int = 3600
@@ -104,6 +151,13 @@ class Settings(BaseSettings):
     microsoft_client_id: str = ""
     microsoft_client_secret: str = ""
     conference_room_booking_enabled: bool = False
+
+    # News headlines (NewsAPI) for chat loading state
+    newsapi_key: str = ""
+    newsapi_cache_seconds: int = 900
+
+    # Fun facts for chat loading state (JSON array or .txt one per line)
+    fun_facts_path: str = "data/fun-facts.json"
 
     @property
     def escalate_department_list(self) -> List[str]:

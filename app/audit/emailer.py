@@ -55,9 +55,9 @@ def build_training_email(
         f"Hello,",
         "",
         "Your recent Ampcus Helpdesk prompts scored below our quality threshold.",
-        "Please complete a short training module to keep unrestricted access:",
+        "Please contact your helpdesk administrator to review your prompt scores and restore access.",
         "",
-        training_url,
+        f"Helpdesk: {(training_url or '').rstrip('/') or 'http://127.0.0.1:8080'}",
         "",
         "Examples from your recent queries:",
         "",
@@ -72,7 +72,7 @@ def build_training_email(
         lines.append("")
     lines.extend(
         [
-            "After you finish the training page, click “Mark complete” to restore full access.",
+            "An administrator can mark training complete from the admin dashboard.",
             "",
             "— Ampcus Helpdesk",
         ]

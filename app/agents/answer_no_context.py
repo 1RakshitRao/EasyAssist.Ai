@@ -6,6 +6,7 @@ import logging
 from typing import Any, Dict, Tuple
 
 from app.agents.timing import ensure_timings, timed
+from app.audit.query_trace import tracer_from_state
 from app.tickets.store import TICKET_TYPE_ESCALATION, TICKET_TYPE_UNKNOWN
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,9 @@ def build_pending_ticket_payload(state: Dict[str, Any]) -> Dict[str, Any]:
 
 def answer_no_context_node(state: Dict[str, Any]) -> Dict[str, Any]:
     timings = ensure_timings(state)
+    tracer = tracer_from_state(state)
+    if tracer:
+        tracer.agent_started("ANSWER", "KB miss — prompting ticket confirmation")
     with timed(timings, "answer_no_context"):
         department = (state.get("department") or "unknown").lower()
         severity = state.get("severity") or "routine"
@@ -93,6 +97,8 @@ def answer_no_context_node(state: Dict[str, Any]) -> Dict[str, Any]:
             severity,
             escalated,
         )
+        if tracer:
+            tracer.agent_done("ANSWER", "KB miss response with ticket prompt")
         return {
             "department": department if department != "unknown" else "unknown",
             "severity": severity,

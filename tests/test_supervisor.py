@@ -114,6 +114,17 @@ def test_document_op_downgrade_without_document():
     assert result["document_operation"] is None
 
 
+def test_inline_paste_routes_document_op_without_upload():
+    from tests.test_inline_text import GAZA_EXHIBITION_BODY
+
+    query = f"{GAZA_EXHIBITION_BODY}\n\nSummarize this"
+    with patch("app.agents.supervisor.complete") as mock_complete:
+        result = supervise(query, has_document=False)
+        mock_complete.assert_not_called()
+    assert result["intent"] == "document_op"
+    assert result["document_operation"] == "summarize"
+
+
 def test_onboarding_downgrade_when_inactive():
     with patch(
         "app.agents.supervisor.complete",
@@ -133,6 +144,11 @@ def test_normalize_document_operation():
 def test_is_restricted_employee_only():
     assert _is_restricted("show all users", "employee") is True
     assert _is_restricted("show all users", "admin") is False
+
+
+def test_keyword_fallback_group_president():
+    result = _keyword_fallback("who is the ampcus group president ?")
+    assert result["intent"] == "nlp_query"
 
 
 def test_keyword_fallback_avoids_sushi_false_positive():

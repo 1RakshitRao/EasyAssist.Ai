@@ -163,6 +163,14 @@ def get_all_guesthouses() -> List[dict]:
         return [_row(r) for r in rows]
 
 
+def guesthouse_display_name(guesthouse_id: str) -> str:
+    """Public label for UI (no street address)."""
+    for i, gh in enumerate(get_all_guesthouses(), start=1):
+        if gh["id"] == guesthouse_id:
+            return f"Guesthouse {i}"
+    return "Guesthouse"
+
+
 def get_guesthouse_by_name(name: str) -> Optional[dict]:
     init_audit_db()
     key = (name or "").strip().lower()

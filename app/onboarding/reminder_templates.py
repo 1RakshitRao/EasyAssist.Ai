@@ -48,6 +48,65 @@ def _next_tip_task(tasks: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     return pending[0] if pending else None
 
 
+def _task_payload(task: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": task.get("id"),
+        "task_key": task.get("task_key"),
+        "task_title": task.get("task_title"),
+        "category": task.get("category") or "other",
+        "status": task.get("status") or "pending",
+        "link_url": task.get("link_url"),
+        "due_date": task.get("due_date"),
+    }
+
+
+def build_checklist_payload(
+    employee: Dict[str, Any],
+    tasks: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Structured checklist for the interactive chat glass UI."""
+    completed = [t for t in tasks if t.get("status") == "completed"]
+    pending = [t for t in tasks if t.get("status") == "pending"]
+    total = len(tasks)
+    done_count = len(completed)
+    pct = round(100 * done_count / total) if total else 0
+
+    by_cat: Dict[str, List[Dict[str, Any]]] = {}
+    for t in pending:
+        by_cat.setdefault(t.get("category") or "other", []).append(_task_payload(t))
+
+    pending_by_category: Dict[str, List[Dict[str, Any]]] = {}
+    for cat in TIP_CATEGORY_ORDER:
+        if cat in by_cat:
+            pending_by_category[cat] = by_cat[cat]
+    for cat, items in by_cat.items():
+        if cat not in pending_by_category:
+            pending_by_category[cat] = items
+
+    tip = _next_tip_task(tasks)
+    tip_text = None
+    if tip:
+        tip_text = (
+            f"Start with {tip['task_title']} — it unlocks access to most other systems."
+        )
+
+    first_name = (employee.get("full_name") or "").split()[0] or None
+    return {
+        "title": "Your Onboarding Progress",
+        "completed": done_count,
+        "total": total,
+        "percentage": pct,
+        "done": [_task_payload(t) for t in completed],
+        "pending_by_category": pending_by_category,
+        "category_labels": {
+            cat: CATEGORY_LABELS.get(cat, cat.replace("_", " ").title())
+            for cat in pending_by_category
+        },
+        "tip": tip_text,
+        "employee_name": first_name,
+    }
+
+
 def build_checklist_response(
     employee: Dict[str, Any],
     tasks: List[Dict[str, Any]],

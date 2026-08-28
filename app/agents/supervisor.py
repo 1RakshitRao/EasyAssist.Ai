@@ -7,14 +7,17 @@ import logging
 import re
 from typing import Any, Dict, Optional
 
+from app.agents.security_incident import is_security_incident
 from app.config import get_settings
-from app.llm.client import cached_system, complete
+from app.documents.inline_text import detect_inline_analysis, is_inline_text_analysis
+from app.llm.client import cached_system, complete, is_llm_configured, resolve_classifier_model
 
 logger = logging.getLogger(__name__)
 
 INTENTS = (
     "conversational",
     "helpdesk_query",
+    "security_incident",
     "nlp_query",
     "document_op",
     "onboarding_query",
@@ -131,9 +134,19 @@ KEYWORD_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "our services",
             "our products",
             "who leads",
+            "group president",
+            "vice president",
+            "executive vice",
+            "senior vice",
+            "our team",
+            "leadership",
+            "who is the ampcus",
+            "who is our",
             "which office",
             "how many employees",
             "our partners",
+            "company president",
+            "ampcus president",
         ),
     ),
     (
@@ -172,13 +185,13 @@ The user's role is provided to you. Use it to inform routing decisions.
 
 Return ONLY this JSON — no markdown, no explanation, nothing else:
 {{
-  "intent": "<one of the ten intents below>",
+  "intent": "<one of the eleven intents below>",
   "confidence": "high | medium | low",
   "reason": "<one sentence explaining your decision>",
   "document_operation": "<summarize|takeaways|action_items|explain_simply|find_risks|ask_question|add_to_kb|null>"
 }}
 
-━━━ THE TEN INTENTS ━━━
+━━━ THE ELEVEN INTENTS ━━━
 
 conversational
   Greetings, farewells, thank yous, small talk, questions about what
@@ -189,6 +202,15 @@ helpdesk_query
   A genuine work-related question that requires searching a knowledge
   base of HR, IT, Compliance, or Legal policy documents.
   Examples: "how many leave days do I get?", "my VPN won't connect"
+
+security_incident
+  An employee REPORTING they may be the victim of a security issue —
+  unauthorized access, compromised account, suspicious activity, ransomware,
+  missing files, phishing they clicked, or data breach affecting them.
+  This is IN SCOPE. The employee is reporting an incident, not asking
+  how to hack or gain unauthorized access.
+  Examples: "I think someone accessed my account", "my files may have
+  been compromised", "I clicked a phishing link"
 
 nlp_query
   A question about factual company data — clients, services, office
@@ -222,7 +244,9 @@ infrastructure_action
   NOT guesthouse — that is reservation_query.
 
 restricted
-  User asks for data beyond their access level. Do not confirm data exists.
+  User asks for data beyond their access level (admin dumps, audit logs,
+  all users). NOT for employees reporting unauthorized access TO THEIR
+  OWN account — that is security_incident.
   Examples: "show me all users", "show the audit log"
 
 out_of_scope
@@ -231,12 +255,14 @@ out_of_scope
 ━━━ ROUTING RULES ━━━
 
 1. Policy doc → helpdesk_query; company fact → nlp_query
-2. Office printer/room/parking questions → infrastructure_info; print/book actions → infrastructure_action
-3. Guesthouse → reservation_query; conference/meeting room → infrastructure_info or infrastructure_action
-4. document_op requires uploaded document in session context
-5. onboarding_query only when joining_date is recent (within {onboarding_days} days)
-6. restricted takes priority over all other intents
-7. Never classify as out_of_scope if there is any work-related angle
+2. Employee reporting security breach/compromised account → security_incident
+3. Office printer/room/parking questions → infrastructure_info; print/book actions → infrastructure_action
+4. Guesthouse → reservation_query; conference/meeting room → infrastructure_info or infrastructure_action
+5. document_op when an uploaded document is in session OR the user pasted substantial
+   text with an analysis command (summarize, takeaways, action items, explain, risks)
+6. onboarding_query only when joining_date is recent (within {onboarding_days} days)
+7. restricted takes priority over other intents EXCEPT security_incident reports
+8. Never classify as out_of_scope if there is any work-related angle
 """
 
 
@@ -333,6 +359,12 @@ def _apply_post_validation(
 ) -> Dict[str, Any]:
     out = dict(result)
 
+    if is_security_incident(query):
+        out["intent"] = "security_incident"
+        out["reason"] = "Employee reporting a security incident — urgent escalation"
+        out["document_operation"] = None
+        return out
+
     if _is_restricted(query, user_role):
         out["intent"] = "restricted"
         out["reason"] = "Query requests data beyond employee access level"
@@ -340,12 +372,15 @@ def _apply_post_validation(
         return out
 
     if out.get("intent") == "document_op":
-        if not has_document:
+        inline = is_inline_text_analysis(query)
+        if not has_document and not inline:
             out["intent"] = "conversational"
             out["reason"] = "Document operation requested but no document uploaded"
             out["document_operation"] = None
         else:
             op = normalize_document_operation(out.get("document_operation"))
+            if not op and inline:
+                op = detect_inline_analysis(query) or "summarize"
             if not op:
                 op = "summarize"
             out["document_operation"] = op
@@ -379,12 +414,29 @@ def supervise(
     Returns:
         intent, confidence, reason, document_operation (codebase op id or None)
     """
+    if is_security_incident(query):
+        return {
+            "intent": "security_incident",
+            "confidence": "high",
+            "reason": "Employee reporting a security incident — urgent escalation",
+            "document_operation": None,
+        }
+
     if _is_restricted(query, user_role):
         return {
             "intent": "restricted",
             "confidence": "high",
             "reason": "Query requests data beyond employee access level",
             "document_operation": None,
+        }
+
+    if is_inline_text_analysis(query):
+        op = detect_inline_analysis(query) or "summarize"
+        return {
+            "intent": "document_op",
+            "confidence": "high",
+            "reason": "Inline pasted text with analysis command",
+            "document_operation": op,
         }
 
     context_lines = [f"User role: {user_role or 'employee'}"]
@@ -403,7 +455,7 @@ def supervise(
 
     try:
         llm = complete(
-            model=get_settings().classifier_model,
+            model=resolve_classifier_model(),
             system=cached_system(_supervisor_system_prompt()),
             messages=[{"role": "user", "content": user_message}],
             max_tokens=200,

@@ -11,7 +11,7 @@ from app.chat.pending_infrastructure import get_pending
 from app.config import get_settings
 from app.infrastructure.conference_agent import handle_conference_query
 from app.infrastructure.print import handle_print_document
-from app.llm.client import cached_system, complete
+from app.llm.client import cached_system, complete, resolve_classifier_model
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ def _classify_action(query: str, *, has_document: bool) -> Dict[str, Any]:
     try:
         ctx = "Document uploaded in session." if has_document else "No document uploaded."
         llm = complete(
-            model=get_settings().classifier_model,
+            model=resolve_classifier_model(),
             system=cached_system(ACTION_SYSTEM),
             messages=[{"role": "user", "content": f"{ctx}\n\n{query}"}],
             max_tokens=150,
@@ -94,6 +94,11 @@ def handle_infrastructure_action(
     else:
         classified = _classify_action(query, has_document=has_document)
         sub = classified.get("sub_intent") or "unsupported_action"
+
+    from app.audit.query_trace import get_tracer
+
+    if tracer := get_tracer():
+        tracer.agent_step("INFRASTRUCTURE", f"sub-intent={sub}")
 
     if sub == "print_document":
         if not has_document:

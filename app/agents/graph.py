@@ -23,6 +23,7 @@ from app.agents.supervisor_nodes import (
     nlp_node,
     onboarding_node,
     reservation_node,
+    security_incident_node,
     semantic_cache_check_node,
     semantic_cache_write_node,
     supervisor_node,
@@ -30,11 +31,14 @@ from app.agents.supervisor_nodes import (
 from app.agents.ticket_confirm import ticket_confirm_prompt_node
 from app.config import get_settings
 
+from app.audit.query_trace import tracer_from_state
+
 logger = logging.getLogger(__name__)
 
 _INTENT_TO_NODE = {
     "conversational": "direct_reply",
     "helpdesk_query": "semantic_cache_check",
+    "security_incident": "security_incident",
     "nlp_query": "nlp_query",
     "document_op": "document_op",
     "onboarding_query": "onboarding",
@@ -44,6 +48,10 @@ _INTENT_TO_NODE = {
     "restricted": "block",
     "out_of_scope": "decline",
 }
+
+
+def resolve_node_for_intent(intent: str) -> str:
+    return _INTENT_TO_NODE.get((intent or "helpdesk_query").lower(), "semantic_cache_check")
 
 
 def route_after_supervisor(
@@ -57,11 +65,15 @@ def route_after_supervisor(
     "reservation",
     "infrastructure_info",
     "infrastructure_action",
+    "security_incident",
     "block",
     "decline",
 ]:
     intent = (state.get("intent") or "helpdesk_query").lower()
     node = _INTENT_TO_NODE.get(intent, "semantic_cache_check")
+    tracer = tracer_from_state(state)
+    if tracer:
+        tracer.supervisor_routed(node)
     logger.info("route_after_supervisor intent=%s -> %s", intent, node)
     return node  # type: ignore[return-value]
 
@@ -69,17 +81,26 @@ def route_after_supervisor(
 def route_after_semantic_cache(
     state: HelpdeskState,
 ) -> Literal["classify", "cache_hit_end"]:
+    tracer = tracer_from_state(state)
     if state.get("cached") and state.get("answer"):
+        if tracer:
+            tracer.agent_done("CACHE", "Returning cached answer")
         logger.info("route_after_semantic_cache -> cache_hit_end")
         return "cache_hit_end"
+    if tracer:
+        tracer.agent_step("CACHE", "Routing to classify")
     logger.info("route_after_semantic_cache -> classify")
     return "classify"
 
 
 def route_after_classify(state: HelpdeskState) -> Literal["retrieve"]:
+    tracer = tracer_from_state(state)
+    dept = state.get("department")
+    if tracer:
+        tracer.agent_step("CLASSIFIER", f"Routing to retrieve (dept={dept})")
     logger.info(
         "route_after_classify -> retrieve (dept=%s)",
-        state.get("department"),
+        dept,
     )
     return "retrieve"
 
@@ -96,8 +117,15 @@ def route_after_retrieve(
 
     if not chunks:
         if len(attempted) >= 4 or retry_count >= max_retries:
+            if tracer := tracer_from_state(state):
+                tracer.agent_step("RETRIEVER", "KB miss — answer_no_context")
             logger.info("route_after_retrieve -> answer_no_context (KB not recognized)")
             return "answer_no_context"
+        if tracer := tracer_from_state(state):
+            tracer.agent_step(
+                "RETRIEVER",
+                f"Empty retrieval — reclassify (retry_count={retry_count})",
+            )
         logger.info(
             "route_after_retrieve -> classify (empty, retry_count=%s)",
             retry_count,
@@ -105,9 +133,13 @@ def route_after_retrieve(
         return "classify"
 
     if should_escalate(department, severity):
+        if tracer := tracer_from_state(state):
+            tracer.agent_step("RETRIEVER", "High severity — escalate")
         logger.info("route_after_retrieve -> escalate")
         return "escalate"
 
+    if tracer := tracer_from_state(state):
+        tracer.agent_step("RETRIEVER", "Chunks found — answer")
     logger.info("route_after_retrieve -> answer")
     return "answer"
 
@@ -131,6 +163,7 @@ def build_graph():
     graph.add_node("reservation", reservation_node)
     graph.add_node("infrastructure_info", infrastructure_info_node)
     graph.add_node("infrastructure_action", infrastructure_action_node)
+    graph.add_node("security_incident", security_incident_node)
     graph.add_node("block", block_node)
     graph.add_node("decline", decline_node)
 
@@ -147,6 +180,7 @@ def build_graph():
             "reservation": "reservation",
             "infrastructure_info": "infrastructure_info",
             "infrastructure_action": "infrastructure_action",
+            "security_incident": "security_incident",
             "block": "block",
             "decline": "decline",
         },
@@ -186,6 +220,7 @@ def build_graph():
         "reservation",
         "infrastructure_info",
         "infrastructure_action",
+        "security_incident",
         "block",
         "decline",
     ):
@@ -226,7 +261,13 @@ def run_pipeline(
     onboarding_active: bool = False,
     has_prior: bool = False,
     include_welcome: bool = False,
+    tracer: Any = None,
 ) -> Dict[str, Any]:
+    from app.audit.query_trace import QueryTracer, set_tracer
+
+    if isinstance(tracer, QueryTracer):
+        set_tracer(tracer)
+
     initial: HelpdeskState = {
         "query": query,
         "normalized_query": normalized_query,
@@ -262,9 +303,15 @@ def run_pipeline(
         "pending_ticket_payload": None,
         "kb_miss_query": None,
         "reservation_calendar": None,
+        "onboarding_checklist": None,
+        "tracer": tracer,
     }
     graph = get_graph()
-    result = graph.invoke(initial)
+    try:
+        result = graph.invoke(initial)
+    finally:
+        if isinstance(tracer, QueryTracer):
+            set_tracer(None)
     if not result.get("intent"):
         result["intent"] = "helpdesk_query"
     return result

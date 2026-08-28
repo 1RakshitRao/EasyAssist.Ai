@@ -66,17 +66,22 @@ pytest -q
 
 Most unit tests run without an API key (classifier fallback, normalize, routing, refuse-if-empty).
 
-## Local LLMs (Ollama)
+## LLM providers (Groq default)
 
-Default provider is **Ollama**, mapping Anthropic roles to models you already have:
+Default provider is **Groq**, with tier-based routing:
 
-| Role | Simulates | Default local model |
-|------|-----------|---------------------|
-| Classifier + routine answer | Haiku | `llama3.2:latest` |
-| High-severity answer | Sonnet | `mistral:latest` |
-| High + escalated (legal/HR) | Opus | `llama3.1:8b` |
+| Tier | Model | Use |
+|------|-------|-----|
+| fast | `openai/gpt-oss-20b` | Classifier, scorer, NLP |
+| balanced | `openai/gpt-oss-120b` | Answers, document summarization |
+| powerful | `openai/gpt-oss-120b` | High + escalated answers |
+| guardrails | `llama-prompt-guard-2-86m` | Phase 9 safety checks |
 
-Ensure Ollama is running (`ollama serve`) then start the API. Switch to cloud with `LLM_PROVIDER=anthropic` and a real key in `.env`.
+Set `GROQ_API_KEY` in `.env` (from [console.groq.com](https://console.groq.com)). Switch to Grok with `LLM_PROVIDER=grok` + `XAI_API_KEY`, or Anthropic with `LLM_PROVIDER=anthropic` + `ANTHROPIC_API_KEY`. **Ollama is not supported.**
+
+Smoke tests:
+- `python scripts/test_groq.py`
+- `python scripts/check_groq_models.py`
 
 ## Semantic cache
 

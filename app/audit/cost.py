@@ -51,3 +51,5 @@ def costs_for_query(
         "cost_opus_always_usd": est["cost_opus_always_usd"],
         "cost_savings_usd": round(max(est["cost_opus_always_usd"] - actual, 0.0), 6),
     }
+
+

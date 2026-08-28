@@ -32,6 +32,9 @@ from app.api.routes_stats import router as stats_router
 from app.api.routes_tickets import router as tickets_router
 from app.api.routes_reservations import router as reservations_router
 from app.api.routes_infrastructure import router as infrastructure_router
+from app.api.routes_news import router as news_router
+from app.api.routes_fun_facts import router as fun_facts_router
+from app.api.routes_feedback import router as feedback_router
 from app.audit.db import init_audit_db
 from app.auth.users import bootstrap_admin_if_empty
 from app.cache.redis_cache import get_cache
@@ -185,6 +188,9 @@ app.include_router(notifications_router)
 app.include_router(onboarding_router)
 app.include_router(reservations_router)
 app.include_router(infrastructure_router)
+app.include_router(news_router)
+app.include_router(fun_facts_router)
+app.include_router(feedback_router)
 app.include_router(stats_router)
 app.include_router(admin_insights_router)
 
@@ -193,4 +199,10 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 @app.get("/")
 def ui_home():
-    return FileResponse(STATIC_DIR / "index.html")
+    return FileResponse(
+        STATIC_DIR / "index.html",
+        headers={
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+        },
+    )

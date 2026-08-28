@@ -8,7 +8,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from app.config import get_settings
-from app.llm.client import cached_system, complete
+from app.llm.client import cached_system, complete, is_llm_configured, resolve_classifier_model
 
 logger = logging.getLogger(__name__)
 
@@ -169,12 +169,12 @@ def score_prompt(query: str) -> Dict[str, Any]:
     settings = get_settings()
     fallback = heuristic_score(query)
 
-    if settings.llm_provider.lower() == "anthropic" and not settings.anthropic_api_key:
+    if not is_llm_configured():
         return {**fallback, "model_used": "heuristic"}
 
     try:
         result = complete(
-            model=settings.classifier_model,
+            model=resolve_classifier_model(),
             system=cached_system(SCORER_SYSTEM),
             user_content=json.dumps({"query": query}),
             max_tokens=400,

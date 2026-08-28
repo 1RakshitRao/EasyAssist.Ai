@@ -5,6 +5,180 @@ const AUTH_KEY = "ampcus_helpdesk_auth";
 const CHAT_SESSION_KEY = "ampcus_chat_session_id";
 const CHAT_SESSION_OWNER_KEY = "ampcus_chat_session_owner";
 
+const HEADLINES = [];
+const FUN_FACTS = [];
+const FALLBACK_FUN_FACTS = [
+  "Honey never spoils — archaeologists have found 3,000-year-old honey in Egyptian tombs that was still edible.",
+  "Octopuses have three hearts and blue blood.",
+  "A group of flamingos is called a flamboyance.",
+];
+const THINKING_ROTATE_MS = 5_000;
+let _thinkingTimer = null;
+let _lastThinkingMessage = "";
+
+async function loadHeadlines() {
+  try {
+    const res = await fetch("/news/headlines");
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.headlines?.length) {
+      HEADLINES.splice(0, HEADLINES.length, ...data.headlines);
+    }
+  } catch {
+    /* silent — no headlines is fine */
+  }
+}
+
+async function loadFunFacts() {
+  try {
+    const res = await fetch("/fun-facts");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    if (data.facts?.length) {
+      FUN_FACTS.splice(0, FUN_FACTS.length, ...data.facts);
+      return;
+    }
+  } catch {
+    /* fall through to embedded facts */
+  }
+  if (!FUN_FACTS.length) {
+    FUN_FACTS.splice(0, FUN_FACTS.length, ...FALLBACK_FUN_FACTS);
+  }
+}
+
+async function ensureThinkingFeed() {
+  await Promise.all([loadHeadlines(), loadFunFacts()]);
+}
+
+function pickRandomItem(items) {
+  if (!items.length) return null;
+  if (items.length === 1) return items[0];
+  const label = (item) => (typeof item === "string" ? item : item?.text || "");
+  let pick = items[Math.floor(Math.random() * items.length)];
+  for (let i = 0; i < 4 && label(pick) === _lastThinkingMessage; i += 1) {
+    pick = items[Math.floor(Math.random() * items.length)];
+  }
+  return pick;
+}
+
+function pickThinkingMessage() {
+  const hasNews = HEADLINES.length > 0;
+  const hasFacts = FUN_FACTS.length > 0;
+  if (!hasNews && !hasFacts) {
+    return "Thinking… (local models can take ~30–60s)";
+  }
+
+  const pool = [];
+  if (hasNews) {
+    pool.push(...HEADLINES.map((h) => ({ kind: "news", text: h.title })));
+  }
+  if (hasFacts) {
+    pool.push(...FUN_FACTS.map((fact) => ({ kind: "fact", text: fact })));
+  }
+
+  const choice = pickRandomItem(pool);
+  const raw = (choice?.text || "").trim();
+  if (!raw) return "Thinking…";
+  const prefix = choice?.kind === "news" ? "News · " : choice?.kind === "fact" ? "Fun fact · " : "";
+  const message = `${prefix}${raw}`;
+  _lastThinkingMessage = raw;
+  return message;
+}
+
+function stopHeadlineRotation() {
+  if (_thinkingTimer) {
+    clearInterval(_thinkingTimer);
+    _thinkingTimer = null;
+  }
+}
+
+function createThinkingBubble() {
+  const el = document.createElement("div");
+  el.className = "bubble bot thinking";
+  el.setAttribute("aria-live", "polite");
+  el.setAttribute("aria-busy", "true");
+
+  const spinner = document.createElement("img");
+  spinner.className = "thinking-spinner";
+  spinner.src = "/static/Thinking.svg";
+  spinner.alt = "";
+  spinner.setAttribute("aria-hidden", "true");
+  spinner.width = 100;
+  spinner.height = 60;
+
+  const textWrap = document.createElement("div");
+  textWrap.className = "thinking-text-viewport";
+
+  const text = document.createElement("span");
+  text.className = "thinking-text thinking-text-slide active";
+  text.textContent = "Loading…";
+  textWrap.appendChild(text);
+
+  el.append(spinner, textWrap);
+  $("#chat-messages").appendChild(el);
+  const container = $("#chat-messages");
+  if (container) {
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+  }
+  refreshCheckpoints();
+  return el;
+}
+
+function setThinkingText(bubbleEl, message, { animate = true } = {}) {
+  const viewport = bubbleEl?.querySelector?.(".thinking-text-viewport");
+  if (!viewport) return;
+
+  const current = viewport.querySelector(".thinking-text-slide.active");
+  const nextMessage = (message || "").trim();
+  if (!nextMessage) return;
+
+  if (!current) {
+    const slide = document.createElement("span");
+    slide.className = "thinking-text thinking-text-slide active";
+    slide.textContent = nextMessage;
+    viewport.appendChild(slide);
+    return;
+  }
+
+  if (current.textContent === nextMessage) return;
+
+  if (!animate || !current.textContent.trim()) {
+    current.textContent = nextMessage;
+    return;
+  }
+
+  const next = document.createElement("span");
+  next.className = "thinking-text thinking-text-slide enter-from-bottom";
+  next.textContent = nextMessage;
+  viewport.appendChild(next);
+
+  // Force reflow so the enter animation runs.
+  next.getBoundingClientRect();
+
+  current.classList.remove("active");
+  current.classList.add("exit-up");
+  next.classList.remove("enter-from-bottom");
+  next.classList.add("active");
+
+  const cleanup = () => {
+    if (current.isConnected) current.remove();
+  };
+  next.addEventListener("transitionend", cleanup, { once: true });
+  setTimeout(cleanup, 450);
+}
+
+async function startHeadlineRotation(bubbleEl) {
+  stopHeadlineRotation();
+  if (!bubbleEl) return;
+  _lastThinkingMessage = "";
+  setThinkingText(bubbleEl, "Loading…", { animate: false });
+  await ensureThinkingFeed();
+  const show = (animate = true) =>
+    setThinkingText(bubbleEl, pickThinkingMessage(), { animate });
+  show(false);
+  _thinkingTimer = setInterval(() => show(true), THINKING_ROTATE_MS);
+}
+
 function formatApiError(err, fallback) {
   const detail = err?.detail;
   if (!detail) return fallback;
@@ -95,12 +269,89 @@ function userInitials(name, email) {
   return local.slice(0, 2).toUpperCase();
 }
 
+const NAV_SECTIONS_STORAGE_KEY = "ampcus_nav_sections_collapsed";
+let _navSectionsInit = false;
+
+function readNavSectionsCollapsed() {
+  try {
+    return JSON.parse(localStorage.getItem(NAV_SECTIONS_STORAGE_KEY) || "{}");
+  } catch (_) {
+    return {};
+  }
+}
+
+function writeNavSectionCollapsed(sectionId, collapsed) {
+  const state = readNavSectionsCollapsed();
+  if (collapsed) state[sectionId] = true;
+  else delete state[sectionId];
+  try {
+    localStorage.setItem(NAV_SECTIONS_STORAGE_KEY, JSON.stringify(state));
+  } catch (_) {}
+}
+
+function setNavSectionCollapsed(section, collapsed) {
+  if (!section) return;
+  section.classList.toggle("is-collapsed", collapsed);
+  const toggle = section.querySelector(".nav-section-label");
+  if (toggle) toggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  const id = section.dataset.navSection;
+  if (id) writeNavSectionCollapsed(id, collapsed);
+}
+
+function expandNavSectionForView(viewName) {
+  const btn = $(`.nav-btn[data-view="${viewName}"]`);
+  const section = btn?.closest(".nav-section");
+  if (!section) return;
+  setNavSectionCollapsed(section, false);
+}
+
+function initNavSections() {
+  if (_navSectionsInit) return;
+  _navSectionsInit = true;
+  const collapsed = readNavSectionsCollapsed();
+  $$(".nav-section").forEach((section) => {
+    const id = section.dataset.navSection;
+    const toggle = section.querySelector(".nav-section-label");
+    if (!toggle || !id) return;
+    if (collapsed[id]) setNavSectionCollapsed(section, true);
+    toggle.addEventListener("click", () => {
+      if (toggle.hidden || currentRole() === "employee") return;
+      setNavSectionCollapsed(section, !section.classList.contains("is-collapsed"));
+    });
+  });
+}
+
 function applyRoleGates() {
   const role = currentRole();
   $$(".nav-btn[data-roles]").forEach((btn) => {
     const allowed = (btn.dataset.roles || "").split(",").map((r) => r.trim());
     btn.hidden = !allowed.includes(role);
   });
+  $$(".nav-section").forEach((section) => {
+    const sectionRoles = (section.dataset.roles || "")
+      .split(",")
+      .map((r) => r.trim())
+      .filter(Boolean);
+    if (sectionRoles.length && !sectionRoles.includes(role)) {
+      section.hidden = true;
+      return;
+    }
+    const visibleBtns = [...section.querySelectorAll(".nav-btn[data-roles]")].filter(
+      (btn) => !btn.hidden
+    );
+    section.hidden = visibleBtns.length === 0;
+    const label = section.querySelector(".nav-section-label");
+    if (label) {
+      label.hidden = role === "employee";
+    }
+  });
+  if (role === "employee") {
+    $$(".nav-section:not([hidden])").forEach((section) => {
+      section.classList.remove("is-collapsed");
+      const toggle = section.querySelector(".nav-section-label");
+      if (toggle) toggle.setAttribute("aria-expanded", "true");
+    });
+  }
   $$("[data-admin-only]").forEach((el) => {
     el.hidden = role !== "admin";
   });
@@ -478,9 +729,12 @@ async function enterApp() {
   document.body.classList.remove("is-login");
   ensureSessionOwnedByCurrentUser();
   applyRoleGates();
+  initNavSections();
   initSidebarToggle();
   initHeaderChrome();
   initNotifications();
+  loadHeadlines();
+  loadFunFacts();
   await loadSessionList();
   switchView("chat");
 }
@@ -518,11 +772,15 @@ function switchView(name) {
   if (name === "dashboard" && !["agent", "admin"].includes(role)) {
     name = "chat";
   }
-  if ((name === "insights" || name === "attribution" || name === "nlp-logs" || name === "onboarding" || name === "reservations") && role !== "admin") {
+  if ((name === "attribution" || name === "nlp-logs" || name === "onboarding" || name === "reservations") && role !== "admin") {
+    name = "chat";
+  }
+  if (name === "insights" && !["agent", "admin"].includes(role)) {
     name = "chat";
   }
   $$(".view").forEach((v) => v.classList.remove("active"));
   $$(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.view === name));
+  expandNavSectionForView(name);
   const view = document.getElementById(`view-${name}`);
   if (view) view.classList.add("active");
   if (name === "dashboard") loadStats();
@@ -1127,6 +1385,36 @@ function escapeHtml(str) {
     .replaceAll('"', "&quot;");
 }
 
+function renderBotMarkdown(text) {
+  if (!text) return "";
+  const placeholders = [];
+  let work = String(text).replace(/```([\s\S]*?)```/g, (_, code) => {
+    const key = `__CODE_BLOCK_${placeholders.length}__`;
+    placeholders.push(`<pre><code>${escapeHtml(code.trim())}</code></pre>`);
+    return key;
+  });
+  work = escapeHtml(work);
+  placeholders.forEach((html, i) => {
+    work = work.replace(`__CODE_BLOCK_${i}__`, html);
+  });
+  work = work
+    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/`([^`\n]+)`/g, '<code class="inline-code">$1</code>');
+  const blocks = work.split(/\n{2,}/);
+  return blocks
+    .map((block) => {
+      const trimmed = block.trim();
+      if (!trimmed) return "";
+      if (/^<(h[1-3]|pre)\b/.test(trimmed)) return trimmed;
+      return `<p>${trimmed.replace(/\n/g, "<br>")}</p>`;
+    })
+    .filter(Boolean)
+    .join("");
+}
+
 function truncateCheckpoint(text, max = 48) {
   const s = String(text || "").replace(/\s+/g, " ").trim();
   if (s.length <= max) return s || "Message";
@@ -1325,7 +1613,11 @@ function initChatCheckpoints() {
 function addBubble(role, text, isError = false) {
   const el = document.createElement("div");
   el.className = `bubble ${role}${isError ? " error" : ""}`;
-  el.textContent = text;
+  if (role === "bot" && !isError && text) {
+    el.innerHTML = `<div class="bubble-content">${renderBotMarkdown(text)}</div>`;
+  } else {
+    el.textContent = text;
+  }
   if (role === "user" && !isError) {
     el.dataset.checkpointId = `cp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
   }
@@ -1338,27 +1630,285 @@ function addBubble(role, text, isError = false) {
   return el;
 }
 
+function attachAnswerFeedback(bubbleEl, meta = {}) {
+  if (!bubbleEl || bubbleEl.classList.contains("error")) return;
+  if (bubbleEl.querySelector(".answer-feedback")) return;
+  const messageId = meta.messageId || meta.message_id || "";
+  if (!messageId) return;
+
+  bubbleEl.classList.add("has-answer-actions");
+
+  const bar = document.createElement("div");
+  bar.className = "answer-feedback";
+  bar.dataset.messageId = messageId;
+  bar.dataset.question = meta.question || "";
+  bar.dataset.answer = meta.answer || "";
+  bar.dataset.department = meta.department || "";
+  bar.dataset.sessionId = meta.sessionId || meta.session_id || getActiveSessionId() || "";
+  bar.dataset.sources = JSON.stringify(meta.sources || []);
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "answer-feedback-toolbar";
+
+  const copyBtn = document.createElement("button");
+  copyBtn.type = "button";
+  copyBtn.className = "answer-feedback-btn answer-feedback-copy";
+  copyBtn.title = "Copy";
+  copyBtn.setAttribute("aria-label", "Copy answer");
+  copyBtn.innerHTML =
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+
+  const upBtn = document.createElement("button");
+  upBtn.type = "button";
+  upBtn.className = "answer-feedback-btn";
+  upBtn.dataset.rating = "up";
+  upBtn.title = "Good response";
+  upBtn.setAttribute("aria-label", "Mark answer helpful");
+  upBtn.innerHTML =
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z"/><path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/></svg>';
+
+  const downBtn = document.createElement("button");
+  downBtn.type = "button";
+  downBtn.className = "answer-feedback-btn";
+  downBtn.dataset.rating = "down";
+  downBtn.title = "Bad response";
+  downBtn.setAttribute("aria-label", "Mark answer not helpful");
+  downBtn.innerHTML =
+    '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3H10z"/><path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/></svg>';
+
+  const status = document.createElement("span");
+  status.className = "answer-feedback-status";
+  status.hidden = true;
+
+  toolbar.append(copyBtn, upBtn, downBtn, status);
+
+  const form = document.createElement("div");
+  form.className = "answer-feedback-form";
+  form.hidden = true;
+  form.innerHTML = `
+    <label class="answer-feedback-label">What was wrong?
+      <textarea class="answer-feedback-comment" rows="2" placeholder="Optional — helps improve the knowledge base"></textarea>
+    </label>
+    <label class="answer-feedback-label">Better answer (optional)
+      <textarea class="answer-feedback-correction" rows="3" placeholder="Suggested correction for the KB"></textarea>
+    </label>
+    <div class="answer-feedback-form-actions">
+      <button type="button" class="chip answer-feedback-cancel">Cancel</button>
+      <button type="button" class="btn-primary answer-feedback-submit">Submit feedback</button>
+    </div>
+  `;
+
+  bar.append(toolbar, form);
+  bubbleEl.appendChild(bar);
+
+  const setFormOpen = (open) => {
+    form.hidden = !open;
+    bar.classList.toggle("is-open", open);
+    if (open) form.querySelector(".answer-feedback-comment")?.focus();
+  };
+
+  const setRated = (rating) => {
+    bar.dataset.rated = rating;
+    bar.classList.add("is-rated");
+    bar.classList.remove("is-open");
+    upBtn.disabled = true;
+    downBtn.disabled = true;
+    upBtn.classList.toggle("is-active", rating === "up");
+    downBtn.classList.toggle("is-active", rating === "down");
+    form.hidden = true;
+    status.hidden = false;
+    status.textContent = rating === "up" ? "Thanks" : "Feedback sent";
+    window.setTimeout(() => {
+      if (status.textContent === "Thanks" || status.textContent === "Feedback sent") {
+        status.hidden = true;
+      }
+    }, 1800);
+  };
+
+  copyBtn.addEventListener("click", async () => {
+    const text =
+      (bar.dataset.answer || "").trim() ||
+      bubbleEl.querySelector(".bubble-content")?.innerText?.trim() ||
+      bubbleEl.innerText?.trim() ||
+      "";
+    try {
+      await navigator.clipboard.writeText(text);
+      status.hidden = false;
+      status.textContent = "Copied";
+      window.setTimeout(() => {
+        if (status.textContent === "Copied") status.hidden = true;
+      }, 1200);
+    } catch {
+      status.hidden = false;
+      status.textContent = "Copy failed";
+    }
+  });
+
+  if (meta.existingRating === "up" || meta.existingRating === "down") {
+    setRated(meta.existingRating);
+    status.hidden = true;
+    return;
+  }
+
+  upBtn.addEventListener("click", async () => {
+    if (upBtn.disabled) return;
+    upBtn.disabled = true;
+    downBtn.disabled = true;
+    try {
+      await submitAnswerFeedback(bar, "up");
+      setRated("up");
+    } catch (err) {
+      upBtn.disabled = false;
+      downBtn.disabled = false;
+      status.hidden = false;
+      status.textContent = err.message || "Could not save feedback";
+    }
+  });
+
+  downBtn.addEventListener("click", () => {
+    if (downBtn.disabled) return;
+    setFormOpen(form.hidden);
+  });
+
+  form.querySelector(".answer-feedback-cancel")?.addEventListener("click", () => {
+    setFormOpen(false);
+  });
+
+  form.querySelector(".answer-feedback-submit")?.addEventListener("click", async () => {
+    const submitBtn = form.querySelector(".answer-feedback-submit");
+    if (submitBtn) submitBtn.disabled = true;
+    try {
+      await submitAnswerFeedback(bar, "down", {
+        comment: form.querySelector(".answer-feedback-comment")?.value || "",
+        corrected_answer: form.querySelector(".answer-feedback-correction")?.value || "",
+      });
+      setRated("down");
+    } catch (err) {
+      if (submitBtn) submitBtn.disabled = false;
+      status.hidden = false;
+      status.textContent = err.message || "Could not save feedback";
+    }
+  });
+}
+
+async function submitAnswerFeedback(bar, rating, extras = {}) {
+  let sources = [];
+  try {
+    sources = JSON.parse(bar.dataset.sources || "[]");
+  } catch {
+    sources = [];
+  }
+  const payload = {
+    message_id: bar.dataset.messageId,
+    session_id: bar.dataset.sessionId || getActiveSessionId() || null,
+    question: bar.dataset.question || "",
+    answer: bar.dataset.answer || "",
+    rating,
+    department: bar.dataset.department || null,
+    sources,
+    comment: extras.comment || null,
+    corrected_answer: extras.corrected_answer || null,
+  };
+  const res = await api("/feedback", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(formatApiError(err, `Feedback failed (${res.status})`));
+  }
+  return res.json();
+}
+
+async function hydrateSessionFeedback(sessionId) {
+  if (!sessionId) return;
+  try {
+    const res = await api(`/feedback/mine?session_id=${encodeURIComponent(sessionId)}`);
+    if (!res.ok) return;
+    const rows = await res.json();
+    const byMsg = new Map((rows || []).map((r) => [r.message_id, r]));
+    $$("#chat-messages .answer-feedback").forEach((bar) => {
+      const existing = byMsg.get(bar.dataset.messageId);
+      if (!existing) return;
+      const upBtn = bar.querySelector('[data-rating="up"]');
+      const downBtn = bar.querySelector('[data-rating="down"]');
+      const status = bar.querySelector(".answer-feedback-status");
+      const form = bar.querySelector(".answer-feedback-form");
+      if (upBtn) upBtn.disabled = true;
+      if (downBtn) downBtn.disabled = true;
+      upBtn?.classList.toggle("is-active", existing.rating === "up");
+      downBtn?.classList.toggle("is-active", existing.rating === "down");
+      if (form) form.hidden = true;
+      if (status) status.hidden = true;
+      bar.classList.add("is-rated");
+      bar.classList.remove("is-open");
+      bar.dataset.rated = existing.rating;
+    });
+  } catch {
+    /* ignore hydration failures */
+  }
+}
+
+const TICKET_CONFIRM_PROMPT =
+  "Would you like me to open a support ticket for human review?";
+
+function splitTicketConfirmText(text) {
+  const prompt = TICKET_CONFIRM_PROMPT;
+  const idx = (text || "").indexOf(prompt);
+  if (idx === -1) return { body: (text || "").trim(), prompt };
+  return {
+    body: text.slice(0, idx).trim(),
+    prompt,
+  };
+}
+
+function shouldShowTicketConfirm(data) {
+  return Boolean(data?.pending_ticket_confirmation);
+}
+
 function addTicketConfirmBubble(text) {
+  const { body, prompt } = splitTicketConfirmText(
+    text || TICKET_CONFIRM_PROMPT
+  );
   const el = document.createElement("div");
   el.className = "bubble bot ticket-confirm-bubble";
-  const body = document.createElement("p");
-  body.className = "ticket-confirm-text";
-  body.textContent = text;
-  el.appendChild(body);
+
+  if (body) {
+    const bodyWrap = document.createElement("div");
+    bodyWrap.className = "ticket-confirm-body";
+    body.split("\n\n").filter(Boolean).forEach((para) => {
+      const p = document.createElement("p");
+      p.textContent = para;
+      bodyWrap.appendChild(p);
+    });
+    el.appendChild(bodyWrap);
+  }
+
+  const promptEl = document.createElement("p");
+  promptEl.className = "ticket-confirm-prompt";
+  promptEl.textContent = prompt;
+  el.appendChild(promptEl);
+
   const actions = document.createElement("div");
   actions.className = "ticket-confirm-actions";
   const yesBtn = document.createElement("button");
   yesBtn.type = "button";
-  yesBtn.className = "chip ticket-confirm-yes";
-  yesBtn.textContent = "Yes, open ticket";
-  yesBtn.addEventListener("click", () => confirmPendingTicket(true));
+  yesBtn.className = "ticket-confirm-btn primary";
+  yesBtn.textContent = "Create ticket";
+  const onChoice = (confirm) => {
+    yesBtn.disabled = true;
+    noBtn.disabled = true;
+    confirmPendingTicket(confirm);
+  };
+  yesBtn.addEventListener("click", () => onChoice(true));
   const noBtn = document.createElement("button");
   noBtn.type = "button";
-  noBtn.className = "chip ticket-confirm-no";
+  noBtn.className = "ticket-confirm-btn";
   noBtn.textContent = "No thanks";
-  noBtn.addEventListener("click", () => confirmPendingTicket(false));
+  noBtn.addEventListener("click", () => onChoice(false));
   actions.append(yesBtn, noBtn);
   el.appendChild(actions);
+  el.dataset.ticketConfirm = "1";
   $("#chat-messages").appendChild(el);
   const container = $("#chat-messages");
   if (container) {
@@ -1369,6 +1919,7 @@ function addTicketConfirmBubble(text) {
 }
 
 const RES_CAL_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const RES_CAL_WEEK_LETTERS = ["S", "M", "T", "W", "T", "F", "S"];
 
 function formatResCalDate(iso) {
   if (!iso) return "—";
@@ -1393,13 +1944,231 @@ function addDaysIso(iso, n) {
   return d.toISOString().slice(0, 10);
 }
 
+function resCalWeekStart(iso) {
+  const d = new Date(`${iso}T12:00:00`);
+  d.setDate(d.getDate() - d.getDay());
+  return d.toISOString().slice(0, 10);
+}
+
+function resCalWeekDays(anchorIso) {
+  const start = resCalWeekStart(anchorIso);
+  return Array.from({ length: 7 }, (_, i) => addDaysIso(start, i));
+}
+
+function resCalHeroDate(state) {
+  if (state.checkin) return state.checkin;
+  const today = new Date().toISOString().slice(0, 10);
+  if (today.startsWith(state.month)) return today;
+  return `${state.month}-01`;
+}
+
+function resCalMonthName(iso) {
+  try {
+    return new Date(`${iso}T12:00:00`).toLocaleDateString(undefined, { month: "long" });
+  } catch {
+    return "";
+  }
+}
+
+function resCalDayNumber(iso) {
+  try {
+    return new Date(`${iso}T12:00:00`).getDate();
+  } catch {
+    return "";
+  }
+}
+
+function resCalDayInfoFromMap(map, iso, dataRange) {
+  const entry = map[iso];
+  if (entry && typeof entry === "object") {
+    return { status: entry.status || "available", ...entry };
+  }
+  const status =
+    entry ||
+    (iso >= dataRange?.from && iso <= dataRange?.to ? "available" : "confirmed");
+  return { date: iso, status };
+}
+
+function resCalDayClasses(iso, info, state, today) {
+  const status = info?.status || "available";
+  const isPast = iso <= today;
+  let cls = `res-cal-day ${status}`;
+  if (isPast) cls += " past";
+  if (iso === state.checkin || iso === state.checkout) cls += " selected";
+  if (state.checkin && state.checkout && iso > state.checkin && iso < state.checkout) cls += " in-range";
+  if (iso === resCalHeroDate(state)) cls += " hero-focus";
+  return cls;
+}
+
+function resCalDotMarkup(status) {
+  if (status === "available") return "";
+  return `<span class="res-cal-dot ${status}" aria-hidden="true"></span>`;
+}
+
+function resCalPropertyLabel(data) {
+  return data?.display_name || "Guesthouse";
+}
+
+function renderResCalWidget(container, state, handlers) {
+  const r = handlers.room();
+  const map = handlers.dayMap(r);
+  const today = new Date().toISOString().slice(0, 10);
+  const heroIso = resCalHeroDate(state);
+  const heroMonth = resCalMonthName(heroIso);
+  const heroDay = resCalDayNumber(heroIso);
+  const viewMode = state.viewMode || "weekly";
+  const dataRange = { from: state.data?.from_date, to: state.data?.to_date };
+  const weekAnchor = state.weekAnchor || heroIso;
+  const weekDays = resCalWeekDays(weekAnchor);
+  const { first, last, label } = monthBounds(state.month);
+
+  const roomBtns = (state.data?.rooms || [])
+    .map(
+      (rm, i) =>
+        `<button type="button" class="res-cal-room-btn${i === state.roomIdx ? " active" : ""}" data-room-idx="${i}">Room ${escapeHtml(rm.room_number)}</button>`
+    )
+    .join("");
+
+  const weekLabels = RES_CAL_WEEK_LETTERS.map((d) => `<span>${d}</span>`).join("");
+  const weekCells = weekDays
+    .map((iso) => {
+      const info = resCalDayInfoFromMap(map, iso, dataRange);
+      const status = info.status || "available";
+      const cls = resCalDayClasses(iso, info, state, today);
+      const isPast = iso <= today;
+      const disabled =
+        state.loading ||
+        (handlers.mode === "chat" && (isPast || status !== "available")) ||
+        (handlers.mode === "admin" && status === "available" && isPast);
+      const dayNum = resCalDayNumber(iso);
+      return `<button type="button" class="${cls} res-cal-week-day" data-date="${iso}" data-status="${status}" ${disabled ? "disabled" : ""}>
+        ${dayNum}${resCalDotMarkup(status)}
+      </button>`;
+    })
+    .join("");
+
+  const startPad = first.getDay();
+  const daysInMonth = last.getDate();
+  const totalSlots = Math.ceil((startPad + daysInMonth) / 7) * 7;
+  const monthCells = [];
+  for (let slot = 0; slot < totalSlots; slot++) {
+    const day = slot - startPad + 1;
+    if (day < 1 || day > daysInMonth) {
+      monthCells.push('<div class="res-cal-day empty" aria-hidden="true"></div>');
+      continue;
+    }
+    const iso = `${state.month}-${String(day).padStart(2, "0")}`;
+    const info = resCalDayInfoFromMap(map, iso, dataRange);
+    const status = info.status || "available";
+    const cls = resCalDayClasses(iso, info, state, today);
+    const isPast = iso <= today;
+    const disabled =
+      state.loading ||
+      (handlers.mode === "chat" && (isPast || status !== "available")) ||
+      (handlers.mode === "admin" && status === "available" && isPast);
+    monthCells.push(
+      `<button type="button" class="${cls}" data-date="${iso}" data-status="${status}" ${disabled ? "disabled" : ""}>${day}${resCalDotMarkup(status)}</button>`
+    );
+  }
+
+  const navLabel =
+    viewMode === "weekly"
+      ? `${formatResCalDate(weekDays[0])} – ${formatResCalDate(weekDays[6])}`
+      : label;
+
+  const sel = state.checkin
+    ? `<p class="res-cal-selection">${escapeHtml(formatResCalDate(state.checkin))}${
+        state.checkout ? ` → ${escapeHtml(formatResCalDate(state.checkout))}` : " · pick check-out"
+      }</p>`
+    : `<p class="res-cal-selection res-cal-selection-hint">Tap available dates to book</p>`;
+
+  const confirmBtn =
+    handlers.mode === "chat"
+      ? `<button type="button" class="res-cal-confirm-primary res-cal-confirm" ${state.loading ? "disabled" : ""}>
+          <span aria-hidden="true">+</span> Confirm reservation
+        </button>`
+      : "";
+
+  const err = state.error ? `<p class="res-cal-error">${escapeHtml(state.error)}</p>` : "";
+
+  container.innerHTML = `
+    <div class="res-cal-glass">
+      <div class="res-cal-bg" aria-hidden="true"></div>
+      <div class="res-cal-shine" aria-hidden="true"></div>
+      <div class="res-cal-top">
+        <div class="res-cal-view-toggle" role="tablist" aria-label="Calendar view">
+          <button type="button" class="res-cal-view-btn${viewMode === "weekly" ? " active" : ""}" data-view="weekly" role="tab" aria-selected="${viewMode === "weekly"}">Weekly</button>
+          <button type="button" class="res-cal-view-btn${viewMode === "monthly" ? " active" : ""}" data-view="monthly" role="tab" aria-selected="${viewMode === "monthly"}">Monthly</button>
+        </div>
+        <button type="button" class="res-cal-settings-btn" aria-label="Toggle legend" aria-expanded="${state.legendOpen ? "true" : "false"}">
+          <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8m8.94 3A8.994 8.994 0 0 0 13 3.06V1h-2v2.06A8.994 8.994 0 0 0 3.06 11H1v2h2.06A8.994 8.994 0 0 0 11 20.94V23h2v-2.06A8.994 8.994 0 0 0 20.94 13H23v-2h-2.06M12 18a6 6 0 1 1 0-12 6 6 0 0 1 0 12"/></svg>
+        </button>
+      </div>
+      <div class="res-cal-hero">
+        <span class="res-cal-hero-month">${escapeHtml(heroMonth)}</span>
+        <span class="res-cal-hero-day">${heroDay}</span>
+      </div>
+      <div class="res-cal-header">
+        <span class="res-cal-title">${escapeHtml(resCalPropertyLabel(state.data))}</span>
+        <div class="res-cal-rooms">${roomBtns}</div>
+      </div>
+      <div class="res-cal-legend${state.legendOpen ? " is-open" : ""}">
+        <span><i class="res-cal-swatch available"></i> Available</span>
+        <span><i class="res-cal-swatch pending"></i> Awaiting confirmation</span>
+        <span><i class="res-cal-swatch confirmed"></i> Confirmed / unavailable</span>
+      </div>
+      <div class="res-cal-nav">
+        <button type="button" data-nav="prev" ${state.loading ? "disabled" : ""} aria-label="Previous">‹</button>
+        <span class="res-cal-month-label">${escapeHtml(navLabel)}${state.loading ? " …" : ""}</span>
+        <button type="button" data-nav="next" ${state.loading ? "disabled" : ""} aria-label="Next">›</button>
+      </div>
+      <div class="res-cal-week-strip${viewMode === "weekly" ? " is-active" : ""}">
+        <div class="res-cal-week-labels">${weekLabels}</div>
+        <div class="res-cal-week-dates">${weekCells}</div>
+      </div>
+      <div class="res-cal-monthly${viewMode === "monthly" ? " is-active" : ""}">
+        <div class="res-cal-weekdays">${RES_CAL_WEEKDAYS.map((d) => `<span>${d}</span>`).join("")}</div>
+        <div class="res-cal-grid">${monthCells.join("")}</div>
+      </div>
+      <div class="res-cal-footer">
+        ${sel}
+        <div class="res-cal-actions">${confirmBtn}</div>
+      </div>
+      ${err}
+    </div>`;
+
+  container.querySelectorAll(".res-cal-room-btn").forEach((btn) => {
+    btn.addEventListener("click", () => handlers.onRoomChange(Number(btn.dataset.roomIdx) || 0));
+  });
+
+  container.querySelectorAll(".res-cal-view-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const next = btn.dataset.view === "monthly" ? "monthly" : "weekly";
+      handlers.onViewChange(next);
+    });
+  });
+
+  container.querySelector(".res-cal-settings-btn")?.addEventListener("click", () => {
+    handlers.onLegendToggle();
+  });
+
+  container.querySelector('[data-nav="prev"]')?.addEventListener("click", () => handlers.onNavPrev());
+  container.querySelector('[data-nav="next"]')?.addEventListener("click", () => handlers.onNavNext());
+
+  container.querySelectorAll(".res-cal-day[data-date], .res-cal-week-day[data-date]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const iso = btn.dataset.date;
+      const info = resCalDayInfoFromMap(map, iso, dataRange);
+      handlers.onDayClick(iso, info);
+    });
+  });
+
+  container.querySelector(".res-cal-confirm")?.addEventListener("click", () => handlers.onConfirm?.());
+}
+
 function addReservationCalendarBubble(_text, calendarData) {
   const el = document.createElement("div");
   el.className = "bubble bot reservation-calendar-bubble";
-  const intro = document.createElement("p");
-  intro.className = "res-cal-intro";
-  intro.innerHTML = "<strong>Select Dates :</strong>";
-  el.appendChild(intro);
   const widget = document.createElement("div");
   widget.className = "res-cal-widget";
   el.appendChild(widget);
@@ -1411,17 +2180,316 @@ function addReservationCalendarBubble(_text, calendarData) {
   return el;
 }
 
+const ONBOARDING_CHAT_CATEGORY_LABELS = {
+  identity: "Identity & Security",
+  payroll: "Payroll",
+  documents: "Documents",
+  benefits: "Benefits",
+  apps: "Apps & Tools",
+};
+
+const ONBOARDING_CHAT_CATEGORY_ORDER = [
+  "identity",
+  "payroll",
+  "documents",
+  "benefits",
+  "apps",
+];
+
+function looksLikeOnboardingChecklistText(text) {
+  const s = String(text || "");
+  return (
+    s.includes("Your Onboarding Progress") ||
+    (s.includes("tasks complete") && (s.includes("PENDING") || s.includes("[ ]")))
+  );
+}
+
+function extractChecklistIntro(answer) {
+  const raw = String(answer || "");
+  const markers = ["━━━ Your Onboarding Progress", "Your Onboarding Progress"];
+  let idx = -1;
+  for (const m of markers) {
+    idx = raw.indexOf(m);
+    if (idx >= 0) break;
+  }
+  if (idx <= 0) return "";
+  return raw
+    .slice(0, idx)
+    .replace(/[━─]+/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function tasksResponseToChecklistPayload(data) {
+  const grouped = data?.tasks_by_category || {};
+  const allTasks = Object.values(grouped).flat();
+  const done = allTasks.filter((t) => t.status === "completed");
+  const pendingByCategory = {};
+  const labels = {};
+  const cats = ONBOARDING_CHAT_CATEGORY_ORDER.filter((c) => grouped[c]?.length).concat(
+    Object.keys(grouped).filter((c) => !ONBOARDING_CHAT_CATEGORY_ORDER.includes(c))
+  );
+  for (const cat of cats) {
+    const pending = (grouped[cat] || []).filter((t) => t.status === "pending");
+    if (!pending.length) continue;
+    pendingByCategory[cat] = pending;
+    labels[cat] = ONBOARDING_CHAT_CATEGORY_LABELS[cat] || cat.replace(/_/g, " ");
+  }
+  const total = Number(data?.total || allTasks.length || 0);
+  const completed = Number(data?.completed || done.length || 0);
+  const firstPending = Object.values(pendingByCategory).flat()[0];
+  return {
+    title: "Your Onboarding Progress",
+    completed,
+    total,
+    percentage: Number(data?.percentage ?? (total ? Math.round((100 * completed) / total) : 0)),
+    done,
+    pending_by_category: pendingByCategory,
+    category_labels: labels,
+    tip: firstPending
+      ? `Start with ${firstPending.task_title} — it unlocks access to most other systems.`
+      : null,
+  };
+}
+
+function buildOnboardingChecklistBubble(answerText, checklistData) {
+  const el = document.createElement("div");
+  el.className = "bubble bot onboarding-checklist-bubble";
+  el.dataset.answerCopy = String(answerText || "");
+
+  const intro = extractChecklistIntro(answerText);
+  if (intro) {
+    const introEl = document.createElement("div");
+    introEl.className = "ob-check-intro";
+    introEl.innerHTML = renderBotMarkdown(intro);
+    el.appendChild(introEl);
+  }
+
+  const card = document.createElement("div");
+  card.className = "ob-check-card";
+  el.appendChild(card);
+  mountOnboardingChecklist(card, checklistData);
+  return el;
+}
+
+function addOnboardingChecklistBubble(answerText, checklistData) {
+  const el = buildOnboardingChecklistBubble(answerText, checklistData);
+  $("#chat-messages").appendChild(el);
+  const container = $("#chat-messages");
+  if (container) container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+  refreshCheckpoints();
+  return el;
+}
+
+async function hydrateOnboardingChecklistBubble(bubbleEl, answerText) {
+  if (!bubbleEl || bubbleEl.dataset.obHydrated === "1") return bubbleEl;
+  bubbleEl.dataset.obHydrated = "1";
+  try {
+    const res = await api("/me/tasks");
+    if (!res.ok) return bubbleEl;
+    const data = await res.json();
+    if (!data?.total) return bubbleEl;
+    const payload = tasksResponseToChecklistPayload(data);
+    const replacement = buildOnboardingChecklistBubble(answerText, payload);
+    bubbleEl.replaceWith(replacement);
+    refreshCheckpoints();
+    return replacement;
+  } catch {
+    return bubbleEl;
+  }
+}
+
+function mountOnboardingChecklist(container, initialData) {
+  const state = {
+    data: initialData || {
+      completed: 0,
+      total: 0,
+      percentage: 0,
+      done: [],
+      pending_by_category: {},
+      category_labels: {},
+      tip: null,
+    },
+    doneOpen: Boolean((initialData?.done || []).length && !(Object.keys(initialData?.pending_by_category || {}).length)),
+    busyId: null,
+    error: "",
+    flashId: null,
+  };
+
+  async function refreshFromApi() {
+    try {
+      const res = await api("/me/tasks");
+      if (!res.ok) return;
+      const data = await res.json();
+      state.data = tasksResponseToChecklistPayload(data);
+      if (typeof loadWorkspace === "function") {
+        try {
+          loadWorkspace();
+        } catch (_) {
+          /* workspace may be hidden */
+        }
+      }
+    } catch (_) {
+      /* keep prior state */
+    }
+    render();
+  }
+
+  async function completeTask(taskId) {
+    if (!taskId || state.busyId) return;
+    state.busyId = taskId;
+    state.error = "";
+    render();
+    try {
+      const res = await api(`/me/tasks/${taskId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: "completed" }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(err, `HTTP ${res.status}`));
+      }
+      state.flashId = taskId;
+      await refreshFromApi();
+      window.setTimeout(() => {
+        if (state.flashId === taskId) {
+          state.flashId = null;
+          render();
+        }
+      }, 900);
+    } catch (e) {
+      state.error = e.message || "Could not update task.";
+      state.busyId = null;
+      render();
+    } finally {
+      state.busyId = null;
+    }
+  }
+
+  function render() {
+    const d = state.data;
+    const total = Number(d.total || 0);
+    const completed = Number(d.completed || 0);
+    const pct = Math.min(100, Math.round(Number(d.percentage || 0)));
+    const pendingGroups = d.pending_by_category || {};
+    const labels = d.category_labels || {};
+    const done = d.done || [];
+    const pendingCount = Math.max(0, total - completed);
+    const cats = ONBOARDING_CHAT_CATEGORY_ORDER.filter((c) => pendingGroups[c]?.length).concat(
+      Object.keys(pendingGroups).filter((c) => !ONBOARDING_CHAT_CATEGORY_ORDER.includes(c))
+    );
+
+    const doneItems = done
+      .map(
+        (t) => `<li class="ob-check-item is-done">
+          <span class="ob-check-box is-checked" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="12" height="12"><path d="M3.5 8.5l3 3 6-7" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
+          <span class="ob-check-title">${escapeHtml(t.task_title || "")}</span>
+        </li>`
+      )
+      .join("");
+
+    const pendingSections = cats
+      .map((cat) => {
+        const items = (pendingGroups[cat] || [])
+          .map((t) => {
+            const busy = state.busyId === t.id;
+            const link = t.link_url
+              ? `<a class="ob-check-link" href="${escapeHtml(t.link_url)}" target="_blank" rel="noopener noreferrer">Open</a>`
+              : "";
+            return `<li class="ob-check-item${busy ? " is-busy" : ""}" data-task-id="${escapeHtml(t.id || "")}">
+              <button type="button" class="ob-check-box" data-task-id="${escapeHtml(t.id || "")}" aria-label="Mark ${escapeHtml(t.task_title || "task")} complete" ${busy ? "disabled" : ""}></button>
+              <div class="ob-check-body">
+                <span class="ob-check-title">${escapeHtml(t.task_title || "")}</span>
+                ${link}
+              </div>
+            </li>`;
+          })
+          .join("");
+        return `<section class="ob-check-group">
+          <h4 class="ob-check-group-title">${escapeHtml(labels[cat] || ONBOARDING_CHAT_CATEGORY_LABELS[cat] || cat)}</h4>
+          <ul class="ob-check-list">${items}</ul>
+        </section>`;
+      })
+      .join("");
+
+    container.innerHTML = `
+      <div class="ob-check-shine" aria-hidden="true"></div>
+      <header class="ob-check-head">
+        <div class="ob-check-head-text">
+          <p class="ob-check-eyebrow">Onboarding</p>
+          <h3 class="ob-check-title-main">${escapeHtml(d.title || "Your Onboarding Progress")}</h3>
+        </div>
+        <div class="ob-check-ring" style="--pct:${pct}" title="${pct}% complete">
+          <span class="ob-check-ring-value">${pct}<small>%</small></span>
+        </div>
+      </header>
+      <div class="ob-check-progress">
+        <div class="ob-check-progress-track" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100">
+          <div class="ob-check-progress-fill" style="width:${pct}%"></div>
+        </div>
+        <p class="ob-check-progress-meta"><strong>${completed}</strong> of <strong>${total}</strong> tasks complete${pendingCount ? ` · <span>${pendingCount} remaining</span>` : ""}</p>
+      </div>
+      ${
+        done.length
+          ? `<section class="ob-check-done ${state.doneOpen ? "is-open" : ""}">
+              <button type="button" class="ob-check-done-toggle" aria-expanded="${state.doneOpen ? "true" : "false"}">
+                <span class="ob-check-done-label">Done</span>
+                <span class="ob-check-done-count">${done.length}</span>
+                <svg class="ob-check-chevron" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <ul class="ob-check-list ob-check-done-list">${doneItems}</ul>
+            </section>`
+          : ""
+      }
+      ${
+        pendingCount
+          ? `<div class="ob-check-pending">
+              <div class="ob-check-pending-head">
+                <span class="ob-check-pending-label">Up next</span>
+                <span class="ob-check-pending-count">${pendingCount}</span>
+              </div>
+              ${pendingSections}
+            </div>`
+          : `<div class="ob-check-complete-banner">
+              <span class="ob-check-complete-icon" aria-hidden="true">✓</span>
+              <p>All set — onboarding is complete. Welcome aboard.</p>
+            </div>`
+      }
+      ${d.tip && pendingCount ? `<p class="ob-check-tip"><span>Tip</span>${escapeHtml(d.tip)}</p>` : ""}
+      ${state.error ? `<p class="ob-check-error">${escapeHtml(state.error)}</p>` : ""}
+      <p class="ob-check-hint">Tap a checkbox to mark a task complete</p>
+    `;
+
+    container.querySelector(".ob-check-done-toggle")?.addEventListener("click", () => {
+      state.doneOpen = !state.doneOpen;
+      render();
+    });
+
+    container.querySelectorAll(".ob-check-box[data-task-id]").forEach((btn) => {
+      btn.addEventListener("click", () => completeTask(btn.dataset.taskId));
+    });
+  }
+
+  render();
+}
+
 function mountReservationCalendar(container, data) {
   const state = {
     data,
     roomIdx: 0,
     month: (data.display_month || data.from_date?.slice(0, 7) || new Date().toISOString().slice(0, 7)),
+    weekAnchor: resCalHeroDate({ month: data.display_month || data.from_date?.slice(0, 7) }),
+    viewMode: "weekly",
+    legendOpen: false,
     checkin: null,
     checkout: null,
     purpose: "Business travel",
     loading: false,
     error: "",
   };
+  state.weekAnchor = resCalHeroDate(state);
 
   function dayMap(room) {
     const m = {};
@@ -1471,11 +2539,13 @@ function mountReservationCalendar(container, data) {
     }
   }
 
-  function onDayClick(iso, status) {
+  function onDayClick(iso, info) {
     if (state.loading) return;
     const today = new Date().toISOString().slice(0, 10);
     if (iso <= today) return;
+    const status = info?.status || "available";
     if (status !== "available") return;
+    state.weekAnchor = iso;
     if (!state.checkin || (state.checkin && state.checkout)) {
       state.checkin = iso;
       state.checkout = null;
@@ -1531,7 +2601,7 @@ function mountReservationCalendar(container, data) {
       addBubble(
         "bot",
         `Reservation submitted — ${body.confirmation_number || "confirmed"}.\n` +
-          `${state.data.guesthouse_name} · Room ${r.room_number}\n` +
+          `${resCalPropertyLabel(state.data)} · Room ${r.room_number}\n` +
           `${formatResCalDate(state.checkin)} → ${formatResCalDate(state.checkout)}\n` +
           "HR will review shortly. You'll receive email updates."
       );
@@ -1544,106 +2614,61 @@ function mountReservationCalendar(container, data) {
   }
 
   function render() {
-    const r = room();
-    const map = dayMap(r);
-    const { first, last, label } = monthBounds(state.month);
-    const today = new Date().toISOString().slice(0, 10);
-
-    const header = `<div class="res-cal-header">
-      <span class="res-cal-title">${escapeHtml(state.data.guesthouse_name || "Guesthouse")}</span>
-      <div class="res-cal-rooms">${(state.data.rooms || [])
-        .map(
-          (rm, i) =>
-            `<button type="button" class="res-cal-room-btn${i === state.roomIdx ? " active" : ""}" data-room-idx="${i}">Room ${escapeHtml(rm.room_number)}</button>`
-        )
-        .join("")}</div>
-    </div>`;
-
-    const nav = `<div class="res-cal-nav">
-      <button type="button" data-nav="prev" ${state.loading ? "disabled" : ""} aria-label="Previous month">‹</button>
-      <span class="res-cal-month-label">${escapeHtml(label)}${state.loading ? " …" : ""}</span>
-      <button type="button" data-nav="next" ${state.loading ? "disabled" : ""} aria-label="Next month">›</button>
-    </div>`;
-
-    const weekdays = `<div class="res-cal-weekdays">${RES_CAL_WEEKDAYS.map((d) => `<span>${d}</span>`).join("")}</div>`;
-
-    const cells = [];
-    const startPad = first.getDay();
-    const daysInMonth = last.getDate();
-    const totalSlots = Math.ceil((startPad + daysInMonth) / 7) * 7;
-    for (let slot = 0; slot < totalSlots; slot++) {
-      const day = slot - startPad + 1;
-      if (day < 1 || day > daysInMonth) {
-        cells.push('<div class="res-cal-day empty" aria-hidden="true"></div>');
-        continue;
-      }
-      const iso = `${state.month}-${String(day).padStart(2, "0")}`;
-      const status = map[iso] || (iso >= state.data.from_date && iso <= state.data.to_date ? "available" : "confirmed");
-      const isPast = iso <= today;
-      let cls = `res-cal-day ${status}`;
-      if (isPast) cls += " past";
-      if (iso === state.checkin || iso === state.checkout) cls += " selected";
-      if (state.checkin && state.checkout && iso > state.checkin && iso < state.checkout) cls += " in-range";
-      const disabled = isPast || status !== "available" || state.loading;
-      cells.push(
-        `<button type="button" class="${cls}" data-date="${iso}" data-status="${status}" ${disabled ? "disabled" : ""}>${day}</button>`
-      );
-    }
-
-    const legend = `<div class="res-cal-legend">
-      <span><i class="res-cal-swatch available"></i> Available</span>
-      <span><i class="res-cal-swatch pending"></i> Awaiting confirmation</span>
-      <span><i class="res-cal-swatch confirmed"></i> Confirmed / unavailable</span>
-    </div>`;
-
-    const sel = state.checkin
-      ? `<p class="res-cal-selection">Check-in: <strong>${escapeHtml(formatResCalDate(state.checkin))}</strong>` +
-        (state.checkout ? ` · Out: <strong>${escapeHtml(formatResCalDate(state.checkout))}</strong>` : " · pick check-out") +
-        `</p>`
-      : "";
-
-    const err = state.error ? `<p class="res-cal-error">${escapeHtml(state.error)}</p>` : "";
-
-    container.innerHTML =
-      header +
-      legend +
-      nav +
-      weekdays +
-      `<div class="res-cal-grid">${cells.join("")}</div>` +
-      `<div class="res-cal-footer">
-        ${sel}
-        <div class="res-cal-actions">
-          <button type="button" class="btn-primary res-cal-confirm" ${state.loading ? "disabled" : ""}>Confirm reservation</button>
-        </div>
-      </div>` +
-      err;
-
-    container.querySelectorAll(".res-cal-room-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        state.roomIdx = Number(btn.dataset.roomIdx) || 0;
+    renderResCalWidget(container, state, {
+      mode: "chat",
+      room,
+      dayMap,
+      onRoomChange: (idx) => {
+        state.roomIdx = idx;
         state.checkin = null;
         state.checkout = null;
         state.error = "";
         render();
-      });
+      },
+      onViewChange: (view) => {
+        state.viewMode = view;
+        if (view === "weekly") state.weekAnchor = resCalHeroDate(state);
+        render();
+      },
+      onLegendToggle: () => {
+        state.legendOpen = !state.legendOpen;
+        render();
+      },
+      onNavPrev: async () => {
+        if (state.viewMode === "weekly") {
+          state.weekAnchor = addDaysIso(state.weekAnchor || resCalHeroDate(state), -7);
+          state.month = (state.weekAnchor || state.month).slice(0, 7);
+          const week = resCalWeekDays(state.weekAnchor);
+          if (week[0] < state.data?.from_date || week[6] > state.data?.to_date) {
+            await loadMonth(state.month);
+            return;
+          }
+          render();
+          return;
+        }
+        const [y, m] = state.month.split("-").map(Number);
+        const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+        loadMonth(prev);
+      },
+      onNavNext: async () => {
+        if (state.viewMode === "weekly") {
+          state.weekAnchor = addDaysIso(state.weekAnchor || resCalHeroDate(state), 7);
+          state.month = (state.weekAnchor || state.month).slice(0, 7);
+          const week = resCalWeekDays(state.weekAnchor);
+          if (week[0] < state.data?.from_date || week[6] > state.data?.to_date) {
+            await loadMonth(state.month);
+            return;
+          }
+          render();
+          return;
+        }
+        const [y, m] = state.month.split("-").map(Number);
+        const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+        loadMonth(next);
+      },
+      onDayClick,
+      onConfirm: confirmBooking,
     });
-
-    container.querySelector('[data-nav="prev"]')?.addEventListener("click", () => {
-      const [y, m] = state.month.split("-").map(Number);
-      const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
-      loadMonth(prev);
-    });
-    container.querySelector('[data-nav="next"]')?.addEventListener("click", () => {
-      const [y, m] = state.month.split("-").map(Number);
-      const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
-      loadMonth(next);
-    });
-
-    container.querySelectorAll(".res-cal-day[data-date]").forEach((btn) => {
-      btn.addEventListener("click", () => onDayClick(btn.dataset.date, btn.dataset.status));
-    });
-
-    container.querySelector(".res-cal-confirm")?.addEventListener("click", confirmBooking);
   }
 
   render();
@@ -1666,7 +2691,10 @@ async function confirmPendingTicket(confirm) {
         session_id: getActiveSessionId(),
       }),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new Error(formatApiError(errBody, `HTTP ${res.status}`));
+    }
     const data = await res.json();
     if (data.session_id) setActiveSessionId(data.session_id);
     thinking.remove();
@@ -1966,12 +2994,32 @@ async function openChatSession(sessionId) {
           continue;
         }
         const role = m.role === "assistant" ? "bot" : "user";
-        addBubble(role, content);
+        let bubble = addBubble(role, content);
+        if (
+          role === "bot" &&
+          looksLikeOnboardingChecklistText(content) &&
+          !bubble.classList.contains("error")
+        ) {
+          bubble = (await hydrateOnboardingChecklistBubble(bubble, content)) || bubble;
+        }
+        if (role === "bot" && m.id) {
+          const prev = messages[messages.indexOf(m) - 1];
+          const question =
+            prev && prev.role === "user" ? prev.content || "" : "";
+          attachAnswerFeedback(bubble, {
+            messageId: m.id,
+            question,
+            answer: bubble.dataset?.answerCopy || content,
+            department: m.department || "",
+            sessionId,
+          });
+        }
       }
     }
   } catch (err) {
     addBubble("bot", `Could not load chat: ${err.message}`, true);
   }
+  await hydrateSessionFeedback(sessionId);
   await loadSessionList();
   $("#chat-input")?.focus();
 }
@@ -2144,11 +3192,8 @@ async function ask(question) {
   const modelBtn = $("#chat-model-btn");
   if (modelBtn) modelBtn.disabled = true;
   closeChatModelMenu();
-  addBubble(
-    "bot",
-    "Thinking… (local models can take ~30–60s)"
-  );
-  const thinking = $("#chat-messages").lastElementChild;
+  const thinking = createThinkingBubble();
+  startHeadlineRotation(thinking);
 
   try {
     let data;
@@ -2178,30 +3223,50 @@ async function ask(question) {
       data = await res.json();
     }
     if (data.session_id) setActiveSessionId(data.session_id);
+    stopHeadlineRotation();
     thinking.remove();
     const blocked = data.nlp_allowed === false || data.block_kind;
-    if (data.pending_ticket_confirmation) {
-      addTicketConfirmBubble(
-        data.answer || "Would you like me to open a support ticket for human review?"
-      );
+    let botBubble = null;
+    if (shouldShowTicketConfirm(data)) {
+      botBubble = addTicketConfirmBubble(data.answer || TICKET_CONFIRM_PROMPT);
     } else if (data.reservation_calendar) {
-      addReservationCalendarBubble(
+      botBubble = addReservationCalendarBubble(
         data.answer || "Select your guesthouse dates below.",
         data.reservation_calendar
       );
+    } else if (data.onboarding_checklist) {
+      botBubble = addOnboardingChecklistBubble(
+        data.answer || "",
+        data.onboarding_checklist
+      );
     } else {
-      addBubble(
+      botBubble = addBubble(
         "bot",
         data.answer || (blocked ? "Request blocked." : "(empty answer)"),
         blocked
       );
     }
+    if (botBubble && !blocked && data.assistant_message_id) {
+      attachAnswerFeedback(botBubble, {
+        messageId: data.assistant_message_id,
+        question: q,
+        answer:
+          botBubble.dataset.answerCopy ||
+          data.answer ||
+          "",
+        department: data.department || "",
+        sessionId: data.session_id || getActiveSessionId(),
+        sources: data.sources || [],
+      });
+    }
     if (data.intent === "helpdesk_query") loadStats();
     loadSessionList();
   } catch (err) {
+    stopHeadlineRotation();
     thinking.remove();
     addBubble("bot", `Error: ${err.message}`, true);
   } finally {
+    stopHeadlineRotation();
     _askInFlight = false;
     if (modelBtn) modelBtn.disabled = false;
     $("#chat-input").focus();
@@ -3040,6 +4105,24 @@ function statusLabel(ticket) {
   return "TO DO";
 }
 
+function updateBoardDetailActions(ticket) {
+  const status = boardStatus(ticket);
+  const isArchived = Boolean(ticket.archived_at);
+  const assignBtn = $("#board-detail-assign");
+  const resolveBtn = $("#board-detail-resolve");
+  const promoteBtn = $("#board-detail-promote");
+  const archiveBtn = $("#board-detail-archive");
+  const deptSel = $("#board-detail-dept");
+
+  if (assignBtn) assignBtn.hidden = isArchived || status === "resolved";
+  if (resolveBtn) resolveBtn.hidden = isArchived || status === "resolved";
+  if (promoteBtn) promoteBtn.hidden = isArchived;
+  if (archiveBtn) archiveBtn.hidden = isArchived || status !== "resolved";
+  if (deptSel) deptSel.disabled = isArchived || status === "resolved";
+  $("#board-detail-notes")?.toggleAttribute("readonly", isArchived);
+  $("#board-detail-answer")?.toggleAttribute("readonly", isArchived);
+}
+
 function openBoardDetail(id) {
   const ticket = _boardTickets.find((t) => t.id === id);
   if (!ticket) return;
@@ -3079,6 +4162,7 @@ function openBoardDetail(id) {
   if (sel) {
     sel.value = ["hr", "it", "compliance", "legal"].includes(dept) ? dept : "it";
   }
+  updateBoardDetailActions(ticket);
 }
 
 function closeBoardDetail() {
@@ -3088,16 +4172,81 @@ function closeBoardDetail() {
   _selectedTicketId = null;
 }
 
+async function loadArchiveTickets() {
+  const body = $("#board-archive-body");
+  if (!body) return;
+  try {
+    const res = await api("/tickets?archived=true");
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      body.innerHTML = `<p class="empty">${escapeHtml(formatApiError(err, "Could not load archive."))}</p>`;
+      return;
+    }
+    const rows = ticketItems(await res.json()).sort((a, b) =>
+      String(b.archived_at || b.resolved_at || b.updated_at || "").localeCompare(
+        String(a.archived_at || a.resolved_at || a.updated_at || "")
+      )
+    );
+    if (!rows.length) {
+      body.innerHTML =
+        '<p class="empty">Archive is empty. Resolve a ticket on the board, then use <strong>Move to Archive</strong>.</p>';
+      return;
+    }
+    body.innerHTML = `<table class="board-archive-table"><thead><tr>
+      <th>Key</th><th>Type</th><th>Summary</th><th>Department</th><th>Severity</th><th>Reporter</th><th>Resolved</th><th>Archived</th>
+    </tr></thead><tbody>${rows
+      .map((t) => {
+        const type = boardTypeLabel(t);
+        const sev = (t.severity || "—").toLowerCase();
+        const dept = (t.assigned_department || t.department || "—").toLowerCase();
+        return `<tr data-id="${escapeHtml(t.id)}" class="board-archive-row">
+        <td class="mono">${escapeHtml(boardKey(t))}</td>
+        <td><span class="archive-tag ${escapeHtml(type)}">${escapeHtml(type)}</span></td>
+        <td class="archive-summary">${escapeHtml(t.question || "—")}</td>
+        <td>${escapeHtml(dept)}</td>
+        <td><span class="archive-tag${sev === "high" ? " sev-high" : ""}">${escapeHtml(t.severity || "—")}</span></td>
+        <td>${escapeHtml(t.created_by_email || "—")}</td>
+        <td class="mono">${escapeHtml((t.resolved_at || "").replace("T", " ").slice(0, 16) || "—")}</td>
+        <td class="mono">${escapeHtml((t.archived_at || "").replace("T", " ").slice(0, 16) || "—")}</td>
+      </tr>`;
+      })
+      .join("")}</tbody></table>`;
+    body.querySelectorAll(".board-archive-row").forEach((row) => {
+      row.addEventListener("click", () => {
+        const ticket = rows.find((t) => t.id === row.dataset.id);
+        if (ticket) openBoardDetailFromArchive(ticket);
+      });
+    });
+  } catch (e) {
+    body.innerHTML = `<p class="empty">${escapeHtml(e.message || "Could not load archive.")}</p>`;
+  }
+}
+
+function openBoardDetailFromArchive(ticket) {
+  if (!ticket) return;
+  if (!_boardTickets.find((t) => t.id === ticket.id)) {
+    _boardTickets = [ticket, ..._boardTickets];
+  }
+  openBoardDetail(ticket.id);
+}
+
 async function loadTickets() {
-  const tickets = await api("/tickets").then((r) => r.json());
+  const tickets = await api("/tickets?archived=false").then((r) => r.json());
   _boardTickets = ticketItems(tickets).sort((a, b) =>
     String(b.created_at || "").localeCompare(String(a.created_at || ""))
   );
   renderTicketsBoard();
+  await loadArchiveTickets();
   if (_selectedTicketId) {
     const still = _boardTickets.find((t) => t.id === _selectedTicketId);
     if (still) openBoardDetail(_selectedTicketId);
-    else closeBoardDetail();
+    else {
+      const archived = await api(`/tickets/${encodeURIComponent(_selectedTicketId)}`)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null);
+      if (archived?.archived_at) openBoardDetailFromArchive(archived);
+      else closeBoardDetail();
+    }
   }
 }
 
@@ -3176,11 +4325,29 @@ $("#board-detail-promote")?.addEventListener("click", async () => {
   loadStats();
 });
 
+$("#board-detail-archive")?.addEventListener("click", async () => {
+  if (!_selectedTicketId) return;
+  const ticket = _boardTickets.find((t) => t.id === _selectedTicketId);
+  if (!ticket || boardStatus(ticket) !== "resolved") {
+    alert("Mark the ticket resolved (Done) before moving it to the archive.");
+    return;
+  }
+  if (!confirm("Move this ticket to the archive? It will be removed from the board.")) return;
+  const res = await api(`/tickets/${_selectedTicketId}/archive`, { method: "PATCH" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    alert(formatApiError(err, `HTTP ${res.status}`));
+    return;
+  }
+  closeBoardDetail();
+  await loadTickets();
+  loadStats();
+});
+
 $("#refresh-stats")?.addEventListener("click", loadStats);
 $("#reset-session")?.addEventListener("click", () => resetSession());
 $("#refresh-kb")?.addEventListener("click", () => loadKnowledgeBase());
 $("#refresh-tickets")?.addEventListener("click", loadTickets);
-$("#refresh-insights")?.addEventListener("click", loadInsights);
 $("#refresh-nlp-logs")?.addEventListener("click", loadNlpLogs);
 
 function openTextPreview(title, text) {
@@ -3531,7 +4698,140 @@ async function loadInsights() {
       })
       .join("");
   }
+  await loadAnswerFeedbackQueue();
 }
+
+async function loadAnswerFeedbackQueue() {
+  const tbody = $("#answer-feedback-table tbody");
+  const exportLink = $("#export-answer-feedback");
+  if (exportLink) {
+    exportLink.hidden = currentRole() !== "admin";
+  }
+  if (!tbody) return;
+  try {
+    const res = await api("/feedback?rating=down&limit=100");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const rows = await res.json();
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="7">No dislike feedback yet.</td></tr>`;
+      return;
+    }
+    tbody.innerHTML = rows
+      .map((r) => {
+        const when = (r.created_at || "").replace("T", " ").slice(0, 16);
+        const feedbackBits = [
+          r.comment ? escapeHtml(r.comment) : "<em>No comment</em>",
+          r.corrected_answer
+            ? `<div class="feedback-correction"><strong>Correction:</strong> ${escapeHtml(
+                r.corrected_answer.slice(0, 240)
+              )}${r.corrected_answer.length > 240 ? "…" : ""}</div>`
+            : "",
+        ].join("");
+        const dept = (r.department || "it").toLowerCase();
+        const open = r.status === "open";
+        const actions = open
+          ? `<div class="feedback-actions" data-feedback-id="${escapeHtml(r.id)}">
+              <select class="feedback-dept" aria-label="Department">
+                ${["hr", "it", "compliance", "legal"]
+                  .map(
+                    (d) =>
+                      `<option value="${d}" ${d === dept ? "selected" : ""}>${d}</option>`
+                  )
+                  .join("")}
+              </select>
+              <button type="button" class="chip feedback-apply">Apply to KB</button>
+              <button type="button" class="chip feedback-dismiss">Dismiss</button>
+            </div>`
+          : `<span class="muted">${escapeHtml(r.status)}${
+              r.kb_doc_id ? ` · ${escapeHtml(r.kb_doc_id.slice(0, 8))}…` : ""
+            }</span>`;
+        return `<tr>
+          <td class="mono">${escapeHtml(when)}</td>
+          <td>${escapeHtml(r.user_email || "—")}</td>
+          <td class="q">${escapeHtml((r.question || "").slice(0, 160))}</td>
+          <td>${feedbackBits}</td>
+          <td><span class="tag">${escapeHtml(r.department || "—")}</span></td>
+          <td>${escapeHtml(r.status || "—")}</td>
+          <td>${actions}</td>
+        </tr>`;
+      })
+      .join("");
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="7">Could not load feedback: ${escapeHtml(
+      err.message || "error"
+    )}</td></tr>`;
+  }
+}
+
+$("#refresh-insights")?.addEventListener("click", () => {
+  loadInsights();
+});
+
+$("#refresh-answer-feedback")?.addEventListener("click", () => {
+  loadAnswerFeedbackQueue();
+});
+
+$("#export-answer-feedback")?.addEventListener("click", async (e) => {
+  e.preventDefault();
+  try {
+    const res = await api("/feedback/export");
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const text = await res.text();
+    const blob = new Blob([text], { type: "application/x-ndjson" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "answer_feedback_preferences.jsonl";
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    alert(err.message || "Export failed");
+  }
+});
+
+$("#answer-feedback-table")?.addEventListener("click", async (e) => {
+  const applyBtn = e.target.closest?.(".feedback-apply");
+  const dismissBtn = e.target.closest?.(".feedback-dismiss");
+  const wrap = e.target.closest?.(".feedback-actions");
+  if (!wrap) return;
+  const id = wrap.dataset.feedbackId;
+  if (!id) return;
+  if (applyBtn) {
+    applyBtn.disabled = true;
+    const dept = wrap.querySelector(".feedback-dept")?.value || "it";
+    try {
+      const res = await api(`/feedback/${encodeURIComponent(id)}/apply-kb`, {
+        method: "POST",
+        body: JSON.stringify({ department: dept }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(err, `Apply failed (${res.status})`));
+      }
+      await loadAnswerFeedbackQueue();
+    } catch (err) {
+      applyBtn.disabled = false;
+      alert(err.message || "Apply failed");
+    }
+    return;
+  }
+  if (dismissBtn) {
+    dismissBtn.disabled = true;
+    try {
+      const res = await api(`/feedback/${encodeURIComponent(id)}/dismiss`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(err, `Dismiss failed (${res.status})`));
+      }
+      await loadAnswerFeedbackQueue();
+    } catch (err) {
+      dismissBtn.disabled = false;
+      alert(err.message || "Dismiss failed");
+    }
+  }
+});
 
 let _kbData = null;
 let _kbDept = "hr";
@@ -3989,6 +5289,9 @@ function mountAdminReservationCalendar(hostEl, guesthouses) {
     data: null,
     roomIdx: 0,
     month: new Date().toISOString().slice(0, 7),
+    weekAnchor: new Date().toISOString().slice(0, 10),
+    viewMode: "weekly",
+    legendOpen: false,
     checkin: null,
     checkout: null,
     selectedReservation: null,
@@ -4077,6 +5380,7 @@ function mountAdminReservationCalendar(hostEl, guesthouses) {
   function onDayClick(iso, dayEntry) {
     if (state.loading) return;
     const status = dayEntry?.status || "available";
+    state.weekAnchor = iso;
     if (status !== "available") {
       if (dayEntry?.reservation_id) {
         state.selectedReservation = {
@@ -4124,101 +5428,61 @@ function mountAdminReservationCalendar(hostEl, guesthouses) {
       widget.innerHTML = '<p class="empty">Select a property to load the calendar.</p>';
       return;
     }
-    const r = room();
-    const map = dayMap(r);
-    const { first, last, label } = monthBounds(state.month);
-    const today = new Date().toISOString().slice(0, 10);
-
-    const header = `<div class="res-cal-header">
-      <span class="res-cal-title">${escapeHtml(state.data.guesthouse_name || "Guesthouse")}</span>
-      <div class="res-cal-rooms">${(state.data.rooms || [])
-        .map(
-          (rm, i) =>
-            `<button type="button" class="res-cal-room-btn${i === state.roomIdx ? " active" : ""}" data-room-idx="${i}">Room ${escapeHtml(rm.room_number)}</button>`
-        )
-        .join("")}</div>
-    </div>`;
-
-    const legend = `<div class="res-cal-legend">
-      <span><i class="res-cal-swatch available"></i> Available</span>
-      <span><i class="res-cal-swatch pending"></i> Awaiting confirmation</span>
-      <span><i class="res-cal-swatch confirmed"></i> Confirmed / unavailable</span>
-    </div>`;
-
-    const nav = `<div class="res-cal-nav">
-      <button type="button" data-nav="prev" ${state.loading ? "disabled" : ""} aria-label="Previous month">‹</button>
-      <span class="res-cal-month-label">${escapeHtml(label)}${state.loading ? " …" : ""}</span>
-      <button type="button" data-nav="next" ${state.loading ? "disabled" : ""} aria-label="Next month">›</button>
-    </div>`;
-
-    const weekdays = `<div class="res-cal-weekdays">${RES_CAL_WEEKDAYS.map((d) => `<span>${d}</span>`).join("")}</div>`;
-
-    const cells = [];
-    const startPad = first.getDay();
-    const daysInMonth = last.getDate();
-    const totalSlots = Math.ceil((startPad + daysInMonth) / 7) * 7;
-    for (let slot = 0; slot < totalSlots; slot++) {
-      const day = slot - startPad + 1;
-      if (day < 1 || day > daysInMonth) {
-        cells.push('<div class="res-cal-day empty" aria-hidden="true"></div>');
-        continue;
-      }
-      const iso = `${state.month}-${String(day).padStart(2, "0")}`;
-      const entry = map[iso] || { date: iso, status: "available" };
-      const status = entry.status || "available";
-      const isPast = iso < today;
-      let cls = `res-cal-day ${status}`;
-      if (isPast) cls += " past";
-      if (iso === state.checkin || iso === state.checkout) cls += " selected";
-      if (state.checkin && state.checkout && iso > state.checkin && iso < state.checkout) cls += " in-range";
-      const disabled = state.loading || (status === "available" && isPast);
-      cells.push(
-        `<button type="button" class="${cls}" data-date="${iso}" ${disabled ? "disabled" : ""}>${day}</button>`
-      );
-    }
-
-    const sel = state.checkin
-      ? `<p class="res-cal-selection">Check-in: <strong>${escapeHtml(formatResCalDate(state.checkin))}</strong>` +
-        (state.checkout ? ` · Out: <strong>${escapeHtml(formatResCalDate(state.checkout))}</strong>` : " · pick check-out") +
-        `</p>`
-      : "";
-
-    widget.innerHTML =
-      header +
-      legend +
-      nav +
-      weekdays +
-      `<div class="res-cal-grid">${cells.join("")}</div>` +
-      (sel ? `<div class="res-cal-footer">${sel}</div>` : "");
-
-    widget.querySelectorAll(".res-cal-room-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        state.roomIdx = Number(btn.dataset.roomIdx) || 0;
+    renderResCalWidget(widget, state, {
+      mode: "admin",
+      room,
+      dayMap,
+      onRoomChange: (idx) => {
+        state.roomIdx = idx;
         state.checkin = null;
         state.checkout = null;
         state.selectedReservation = null;
         showError("");
         updateDetail();
         render();
-      });
-    });
-
-    widget.querySelector('[data-nav="prev"]')?.addEventListener("click", () => {
-      const [y, m] = state.month.split("-").map(Number);
-      const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
-      loadMonth(prev);
-    });
-    widget.querySelector('[data-nav="next"]')?.addEventListener("click", () => {
-      const [y, m] = state.month.split("-").map(Number);
-      const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
-      loadMonth(next);
-    });
-
-    widget.querySelectorAll(".res-cal-day[data-date]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        const iso = btn.dataset.date;
-        onDayClick(iso, map[iso]);
-      });
+      },
+      onViewChange: (view) => {
+        state.viewMode = view;
+        if (view === "weekly") state.weekAnchor = resCalHeroDate(state);
+        render();
+      },
+      onLegendToggle: () => {
+        state.legendOpen = !state.legendOpen;
+        render();
+      },
+      onNavPrev: async () => {
+        if (state.viewMode === "weekly") {
+          state.weekAnchor = addDaysIso(state.weekAnchor || resCalHeroDate(state), -7);
+          state.month = (state.weekAnchor || state.month).slice(0, 7);
+          const week = resCalWeekDays(state.weekAnchor);
+          if (!state.data?.from_date || week[0] < state.data.from_date || week[6] > state.data.to_date) {
+            await loadMonth(state.month);
+            return;
+          }
+          render();
+          return;
+        }
+        const [y, m] = state.month.split("-").map(Number);
+        const prev = m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+        loadMonth(prev);
+      },
+      onNavNext: async () => {
+        if (state.viewMode === "weekly") {
+          state.weekAnchor = addDaysIso(state.weekAnchor || resCalHeroDate(state), 7);
+          state.month = (state.weekAnchor || state.month).slice(0, 7);
+          const week = resCalWeekDays(state.weekAnchor);
+          if (!state.data?.from_date || week[0] < state.data.from_date || week[6] > state.data.to_date) {
+            await loadMonth(state.month);
+            return;
+          }
+          render();
+          return;
+        }
+        const [y, m] = state.month.split("-").map(Number);
+        const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, "0")}`;
+        loadMonth(next);
+      },
+      onDayClick,
     });
   }
 
@@ -4360,7 +5624,7 @@ function mountAdminReservationCalendar(hostEl, guesthouses) {
 
   if (ghSelect) {
     ghSelect.innerHTML = state.guesthouses
-      .map((g) => `<option value="${escapeHtml(g.id)}">${escapeHtml(g.name)}</option>`)
+      .map((g, i) => `<option value="${escapeHtml(g.id)}">Guesthouse ${i + 1}</option>`)
       .join("");
     ghSelect.value = state.guesthouseId;
     ghSelect.onchange = () => {

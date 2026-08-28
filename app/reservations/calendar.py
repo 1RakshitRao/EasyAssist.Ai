@@ -84,6 +84,7 @@ def build_calendar_payload(
     return {
         "guesthouse_id": gh["id"],
         "guesthouse_name": gh["name"],
+        "display_name": store.guesthouse_display_name(gh["id"]),
         "from_date": start.isoformat(),
         "to_date": end.isoformat(),
         "display_month": start.strftime("%Y-%m"),
@@ -150,6 +151,7 @@ def build_admin_calendar_payload(
     return {
         "guesthouse_id": gh["id"],
         "guesthouse_name": gh["name"],
+        "display_name": store.guesthouse_display_name(gh["id"]),
         "from_date": start.isoformat(),
         "to_date": end.isoformat(),
         "display_month": start.strftime("%Y-%m"),

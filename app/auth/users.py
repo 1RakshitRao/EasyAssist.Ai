@@ -160,6 +160,10 @@ def public_user(user: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def is_admin_role(role: str | None) -> bool:
+    return (role or "").lower().strip() == "admin"
+
+
 def set_access_restricted(email: str, restricted: bool) -> Optional[Dict[str, Any]]:
     """Mirror training restriction onto the JSON user record for fast /query checks."""
     key = (email or "").strip().lower()

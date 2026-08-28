@@ -43,6 +43,9 @@ def _backfill(ticket: Dict[str, Any]) -> Dict[str, Any]:
     ticket.setdefault("updated_by_user_id", None)
     ticket.setdefault("updated_by_email", None)
     ticket.setdefault("resolved_at", None)
+    ticket.setdefault("archived_at", None)
+    ticket.setdefault("archived_by_user_id", None)
+    ticket.setdefault("archived_by_email", None)
     for key, default in _NOTIFY_DEFAULTS.items():
         ticket.setdefault(key, default)
     return ticket
@@ -107,6 +110,9 @@ def create_ticket(
         "updated_by_user_id": None,
         "updated_by_email": None,
         "resolved_at": None,
+        "archived_at": None,
+        "archived_by_user_id": None,
+        "archived_by_email": None,
         **{k: None for k in _NOTIFY_DEFAULTS},
     }
     with _lock:
@@ -136,9 +142,16 @@ def create_ticket(
 def list_tickets(
     status: Optional[str] = None,
     ticket_type: Optional[str] = None,
+    *,
+    archived: Optional[bool] = False,
 ) -> List[Dict[str, Any]]:
+    """List tickets. archived=False excludes archived (board); True = complete list only."""
     with _lock:
         tickets = _read_all()
+    if archived is False:
+        tickets = [t for t in tickets if not t.get("archived_at")]
+    elif archived is True:
+        tickets = [t for t in tickets if t.get("archived_at")]
     if status:
         tickets = [t for t in tickets if t.get("status") == status]
     if ticket_type:
@@ -229,3 +242,26 @@ def update_ticket(ticket_id: str, **fields: Any) -> Optional[Dict[str, Any]]:
             _write_all(tickets)
             return t
     return None
+
+
+def archive_ticket(
+    ticket_id: str,
+    *,
+    archived_by_user_id: Optional[str] = None,
+    archived_by_email: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """Move a resolved ticket off the board into the complete list."""
+    ticket = get_ticket(ticket_id)
+    if not ticket:
+        return None
+    if ticket.get("archived_at"):
+        raise ValueError("Ticket is already archived")
+    if (ticket.get("status") or "").lower() != "resolved":
+        raise ValueError("Only resolved (Done) tickets can be moved to the archive")
+    now = datetime.now(timezone.utc).isoformat()
+    return update_ticket(
+        ticket_id,
+        archived_at=now,
+        archived_by_user_id=archived_by_user_id,
+        archived_by_email=archived_by_email,
+    )

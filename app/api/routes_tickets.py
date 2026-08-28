@@ -15,7 +15,7 @@ from app.models.schemas import (
 )
 from app.rag.chroma_store import DEPARTMENTS, NearDuplicateError, get_store
 from app.tickets.notify import notify_ticket_resolved
-from app.tickets.store import get_ticket, list_tickets, update_ticket
+from app.tickets.store import archive_ticket, get_ticket, list_tickets, update_ticket
 
 router = APIRouter(prefix="/tickets", tags=["tickets"])
 
@@ -28,6 +28,10 @@ def _to_response(ticket: dict) -> TicketResponse:
     ticket.setdefault("created_by_email", None)
     ticket.setdefault("updated_by_user_id", None)
     ticket.setdefault("updated_by_email", None)
+    ticket.setdefault("resolved_at", None)
+    ticket.setdefault("archived_at", None)
+    ticket.setdefault("archived_by_user_id", None)
+    ticket.setdefault("archived_by_email", None)
     return TicketResponse(**ticket)
 
 
@@ -38,10 +42,14 @@ def get_tickets(
     ticket_type: Optional[str] = Query(
         default=None, description="unknown | escalation"
     ),
+    archived: Optional[bool] = Query(
+        default=False,
+        description="false=active board (default), true=complete list only",
+    ),
 ) -> List[TicketResponse]:
     return [
         _to_response(t)
-        for t in list_tickets(status=status, ticket_type=ticket_type)
+        for t in list_tickets(status=status, ticket_type=ticket_type, archived=archived)
     ]
 
 
@@ -68,6 +76,8 @@ def assign_ticket(
         raise HTTPException(status_code=404, detail="ticket not found")
     if ticket.get("status") == "resolved":
         raise HTTPException(status_code=400, detail="ticket already resolved")
+    if ticket.get("archived_at"):
+        raise HTTPException(status_code=400, detail="ticket is archived")
 
     updated = update_ticket(
         ticket_id,
@@ -90,6 +100,8 @@ def resolve_ticket(
     ticket = get_ticket(ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="ticket not found")
+    if ticket.get("archived_at"):
+        raise HTTPException(status_code=400, detail="ticket is archived")
     status = (req.status or "resolved").lower().strip()
     if status not in {"resolved", "assigned"}:
         raise HTTPException(status_code=400, detail="status must be resolved or assigned")
@@ -119,6 +131,22 @@ def resolve_ticket(
     return _to_response(updated)
 
 
+@router.patch("/{ticket_id}/archive", response_model=TicketResponse)
+def archive_ticket_endpoint(ticket_id: str, user: AgentUser) -> TicketResponse:
+    """Move a resolved ticket to the complete list (removes from board)."""
+    try:
+        updated = archive_ticket(
+            ticket_id,
+            archived_by_user_id=user.get("id"),
+            archived_by_email=user.get("email"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not updated:
+        raise HTTPException(status_code=404, detail="ticket not found")
+    return _to_response(updated)
+
+
 @router.post("/{ticket_id}/promote", response_model=TicketResponse)
 def promote_ticket_to_kb(
     ticket_id: str, req: TicketPromoteRequest, user: AgentUser
@@ -127,6 +155,8 @@ def promote_ticket_to_kb(
     ticket = get_ticket(ticket_id)
     if not ticket:
         raise HTTPException(status_code=404, detail="ticket not found")
+    if ticket.get("archived_at"):
+        raise HTTPException(status_code=400, detail="ticket is archived")
     if ticket.get("status") == "resolved" and ticket.get("kb_doc_id"):
         raise HTTPException(status_code=400, detail="ticket already promoted to KB")
 

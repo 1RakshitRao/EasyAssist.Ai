@@ -172,10 +172,11 @@ def test_analyze_document_mocked(monkeypatch):
         lambda **_k: Fake(),
     )
     monkeypatch.setattr(
-        "app.documents.analysis_agent.resolve_answer_model",
+        "app.documents.analysis_agent.resolve_tier_model",
         lambda *_a, **_k: "fake-haiku",
     )
-    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("LLM_PROVIDER", "grok")
+    monkeypatch.setenv("XAI_API_KEY", "test-key")
     get_settings.cache_clear()
     out = analyze_document(
         text="Employees receive 20 days of leave per year.",

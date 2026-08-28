@@ -10,7 +10,7 @@ from jose import JWTError, jwt
 
 from app.audit.emailer import build_training_email, send_email
 from app.audit.store import get_training, list_user_queries, recent_scores, upsert_training
-from app.auth.users import set_access_restricted
+from app.auth.users import get_user_by_email, is_admin_role, set_access_restricted
 from app.config import get_settings
 
 logger = logging.getLogger(__name__)
@@ -55,10 +55,9 @@ def decode_training_token(token: str) -> str:
 
 
 def training_page_url(email: str) -> str:
+    """Legacy helper — training self-service page removed; link to main app."""
     settings = get_settings()
-    base = (settings.training_base_url or "http://127.0.0.1:8080").rstrip("/")
-    token = create_training_token(email)
-    return f"{base}/static/training.html?token={token}"
+    return (settings.training_base_url or settings.app_base_url or "http://127.0.0.1:8080").rstrip("/")
 
 
 def complete_training(email: str) -> Dict[str, Any]:
@@ -106,6 +105,16 @@ def apply_enforcement(email: str, *, now: Optional[datetime] = None) -> Dict[str
     """
     settings = get_settings()
     key = (email or "").strip().lower()
+    user = get_user_by_email(key)
+    if user and is_admin_role(user.get("role")):
+        row = get_training(key) or upsert_training(key)
+        return {
+            "rolling_avg": 0.0,
+            "queries_scored": 0,
+            "status": "good",
+            "training_row": row,
+        }
+
     clock = now or datetime.now(timezone.utc)
     window = max(1, int(settings.prompt_score_window))
     threshold = float(settings.prompt_score_restrict_avg)
