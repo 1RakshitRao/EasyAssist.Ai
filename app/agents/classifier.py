@@ -8,8 +8,9 @@ import re
 from typing import Any, Dict, List, Optional
 
 from app.agents.timing import ensure_timings, timed
+from app.audit.query_trace import tracer_from_state
 from app.config import get_settings
-from app.llm.client import cached_system, complete, merge_token_usage
+from app.llm.client import cached_system, complete, merge_token_usage, resolve_classifier_model
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +23,7 @@ Classify each employee question into exactly one department and one severity.
 
 Departments:
 - hr: PTO, benefits, leave, performance, harassment, expenses, remote work policy as HR topic
-- it: VPN, passwords, MFA, laptops, software, wifi, phishing, outages
+- it: VPN, passwords, MFA, laptops, software, wifi, phishing, outages, security incidents, compromised accounts
 - compliance: data classification, acceptable use, retention, GDPR, gifts, vendor risk, training
 - legal: NDAs, contracts, IP, litigation hold, data breach legal response, employment claims, export
 - unknown: use ONLY when the question does not clearly fit any department above
@@ -83,6 +84,12 @@ _DEPT_KEYWORDS: Dict[str, tuple[str, ...]] = {
         "network",
         "printer",
         "slack",
+        "unauthorized access",
+        "compromised",
+        "account hacked",
+        "suspicious activity",
+        "ransomware",
+        "malware",
     ),
     "legal": (
         "nda",
@@ -137,6 +144,11 @@ _HIGH_KEYWORDS = (
     "data leak",
     "ransomware",
     "threatened",
+    "unauthorized access",
+    "compromised",
+    "account hacked",
+    "suspicious activity",
+    "security incident",
 )
 
 
@@ -187,7 +199,7 @@ def classify_question(
     question: str,
     attempted_depts: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    """LLM classify (Haiku role via Ollama/Anthropic). Failures → unknown HITL ticket."""
+    """LLM classify (fast tier via Grok/Anthropic). Failures → unknown HITL ticket."""
     settings = get_settings()
     attempted = [d.lower() for d in (attempted_depts or [])]
     heuristic = heuristic_classify(question, attempted_depts=attempted)
@@ -199,9 +211,12 @@ def classify_question(
         "token_usage": {},
     }
 
-    # If Anthropic selected but no key, use heuristic (not a silent HR guess).
-    if settings.llm_provider.lower() == "anthropic" and not settings.anthropic_api_key:
+    # If provider selected but no API key, use heuristic (not a silent HR guess).
+    if not settings.anthropic_api_key and settings.llm_provider.lower() == "anthropic":
         logger.warning("Anthropic provider without API key — heuristic classifier")
+        return {**heuristic, "model_used": "heuristic", "token_usage": {}}
+    if not settings.xai_api_key and settings.llm_provider.lower() == "grok":
+        logger.warning("Grok provider without API key — heuristic classifier")
         return {**heuristic, "model_used": "heuristic", "token_usage": {}}
 
     user_payload = {
@@ -210,7 +225,7 @@ def classify_question(
     }
     try:
         result = complete(
-            model=settings.classifier_model,
+            model=resolve_classifier_model(),
             system=cached_system(CLASSIFIER_SYSTEM),
             user_content=json.dumps(user_payload),
             max_tokens=256,
@@ -255,6 +270,9 @@ def classify_question(
 
 def classify_node(state: Dict[str, Any]) -> Dict[str, Any]:
     timings = ensure_timings(state)
+    tracer = tracer_from_state(state)
+    if tracer:
+        tracer.agent_started("CLASSIFIER", "Classifying department and severity")
     with timed(timings, "classify"):
         hint = (state.get("department_hint") or "").lower().strip()
         attempted = list(state.get("attempted_depts") or [])
@@ -264,6 +282,9 @@ def classify_node(state: Dict[str, Any]) -> Dict[str, Any]:
             # First pass only: honor hint without LLM if provided
             if int(state.get("retry_count") or 0) == 0 and not attempted:
                 logger.info("classify using department_hint=%s", hint)
+                if tracer:
+                    tracer.agent_step("CLASSIFIER", f"Using department_hint={hint}")
+                    tracer.agent_done("CLASSIFIER", f"dept={hint} severity=routine")
                 return {
                     "department": hint,
                     "severity": "routine",
@@ -279,6 +300,22 @@ def classify_node(state: Dict[str, Any]) -> Dict[str, Any]:
             result["severity"],
             result.get("reason"),
         )
+        if tracer:
+            tracer.agent_step(
+                "CLASSIFIER",
+                f"dept={result['department']} severity={result['severity']}",
+                reason=result.get("reason"),
+            )
+            if result.get("severity"):
+                tracer.severity_scored(
+                    result["severity"],
+                    result.get("model_used") or "classifier",
+                    result.get("reason") or "",
+                )
+            tracer.agent_done(
+                "CLASSIFIER",
+                f"Classified as {result['department']}/{result['severity']}",
+            )
         return {
             "department": result["department"],
             "severity": result["severity"],

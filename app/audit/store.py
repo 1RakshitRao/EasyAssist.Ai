@@ -45,13 +45,13 @@ def append_event(event: Dict[str, Any]) -> Dict[str, Any]:
                     query, intent, department, severity, model_used, model_role,
                     input_tokens, output_tokens, cost_usd, from_cache, context_used,
                     prompt_score, score_issues_json, improved_query,
-                    latency_ms, answer_length, sources_json, ticket_id
+                    latency_ms, answer_length, sources_json, ticket_id, query_id
                 ) VALUES (
                     ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?, ?,
                     ?, ?, ?, ?, ?,
                     ?, ?, ?,
-                    ?, ?, ?, ?
+                    ?, ?, ?, ?, ?
                 )
                 """,
                 (
@@ -78,6 +78,7 @@ def append_event(event: Dict[str, Any]) -> Dict[str, Any]:
                     int(row.get("answer_length") or 0),
                     sources_json,
                     row.get("ticket_id"),
+                    row.get("query_id"),
                 ),
             )
             conn.commit()
@@ -306,4 +307,53 @@ def upsert_training(email: str, **fields: Any) -> Dict[str, Any]:
             ).fetchone()
     data = dict(row)
     data["access_restricted"] = bool(data.get("access_restricted"))
+    return data
+
+
+def save_query_trace(tracer: Any) -> None:
+    """Persist full query trace JSON to query_traces."""
+    init_audit_db()
+    summary = tracer.summary or {}
+    steps_json = json.dumps(tracer.steps)
+    with _lock:
+        with connect() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO query_traces (
+                    query_id, user_id, user_email, session_id, query,
+                    intent, target_node, model_used, duration_ms,
+                    steps_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    tracer.query_id,
+                    tracer.user_id,
+                    (tracer.user_email or "").lower(),
+                    tracer.session_id,
+                    tracer.query,
+                    summary.get("intent"),
+                    summary.get("target_node"),
+                    summary.get("model_used"),
+                    float(summary.get("duration_ms") or 0),
+                    steps_json,
+                    _now(),
+                ),
+            )
+            conn.commit()
+
+
+def get_query_trace(query_id: str) -> Optional[Dict[str, Any]]:
+    init_audit_db()
+    with connect() as conn:
+        row = conn.execute(
+            "SELECT * FROM query_traces WHERE query_id = ?",
+            (query_id,),
+        ).fetchone()
+    if not row:
+        return None
+    data = dict(row)
+    try:
+        data["steps"] = json.loads(data.get("steps_json") or "[]")
+    except json.JSONDecodeError:
+        data["steps"] = []
     return data

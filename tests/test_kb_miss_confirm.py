@@ -55,6 +55,31 @@ def test_pending_payload_escalation_type():
     assert payload["severity"] == "high"
 
 
+def test_persist_pending_ticket_infers_flag_from_answer(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHROMA_PERSIST_DIR", str(tmp_path / "chroma"))
+    from app.config import get_settings
+
+    get_settings.cache_clear()
+    from app.api.routes_query import _persist_pending_ticket
+    from app.chat.store import ensure_session
+
+    sid = ensure_session(None, "admin@ampcus.com", title_seed="test")
+    answer = build_no_context_answer(department="it", severity="routine")
+    result = {
+        "answer": answer,
+        "department": "it",
+        "severity": "routine",
+        "query": "unknown printer?",
+        "normalized_query": "unknown printer",
+    }
+    updated = _persist_pending_ticket(sid, result, "unknown printer?")
+    assert updated["pending_ticket_confirmation"] is True
+    assert updated["pending_ticket_payload"]["question"] == "unknown printer?"
+    assert get_pending(sid) is not None
+    clear_pending(sid)
+    get_settings.cache_clear()
+
+
 def test_decline_ticket_clears_pending(client, admin_headers):
     miss = client.post(
         "/query",

@@ -1,4 +1,4 @@
-"""API / pipeline integration tests — no live Ollama/Anthropic required."""
+"""API / pipeline integration tests — no live Grok/Anthropic required."""
 
 from __future__ import annotations
 

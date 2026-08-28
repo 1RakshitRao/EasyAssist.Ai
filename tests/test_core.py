@@ -14,7 +14,7 @@ from app.agents.normalize import normalize_query
 from app.cache.redis_cache import ResponseCache
 from app.config import get_settings
 from app.llm.client import resolve_answer_model
-from app.tickets.store import create_ticket, get_ticket, update_ticket
+from app.tickets.store import archive_ticket, create_ticket, get_ticket, list_tickets, update_ticket
 
 
 def test_normalize_query_idempotent_variants():
@@ -194,6 +194,28 @@ def test_escalation_ticket_type(tmp_path, monkeypatch):
     assert ticket["department"] == "legal"
     open_esc = list_tickets(status="open", ticket_type="escalation")
     assert any(t["id"] == ticket["id"] for t in open_esc)
+
+
+def test_archive_resolved_ticket(tmp_path, monkeypatch):
+    monkeypatch.setenv("CHROMA_PERSIST_DIR", str(tmp_path / "chroma"))
+    get_settings.cache_clear()
+    ticket = create_ticket(
+        "Archive me?",
+        "archive me",
+        "kb_not_recognized",
+        created_by_email="employee@ampcus.com",
+    )
+    update_ticket(ticket["id"], status="resolved", resolved_at="2026-08-12T12:00:00+00:00")
+    update_ticket(ticket["id"], status="assigned")
+    with pytest.raises(ValueError, match="Only resolved"):
+        archive_ticket(ticket["id"])
+
+    update_ticket(ticket["id"], status="resolved")
+    archived = archive_ticket(ticket["id"], archived_by_email="admin@ampcus.com")
+    assert archived["archived_at"]
+    assert archived["archived_by_email"] == "admin@ampcus.com"
+    assert ticket["id"] not in {t["id"] for t in list_tickets()}
+    assert ticket["id"] in {t["id"] for t in list_tickets(archived=True)}
     get_settings.cache_clear()
 
 
@@ -207,16 +229,16 @@ def test_cost_estimate_savings():
     from app.analytics.costing import estimate_query_costs
 
     costs = estimate_query_costs(
-        model_used="ollama:llama3.2:latest",
+        model_used="grok:grok-4.1-fast",
         token_usage={"input_tokens": 1000, "output_tokens": 200},
         cached=False,
     )
-    assert costs["model_role"] == "haiku"
+    assert costs["model_role"] == "grok-fast"
     assert costs["cost_actual_usd"] < costs["cost_opus_always_usd"]
     assert costs["cost_savings_usd"] > 0
 
     cached = estimate_query_costs(
-        model_used="ollama:llama3.2:latest",
+        model_used="grok:grok-4.1-fast",
         token_usage={"input_tokens": 1000, "output_tokens": 200},
         cached=True,
     )
@@ -225,6 +247,7 @@ def test_cost_estimate_savings():
 
 
 def test_resolve_answer_model_roles(monkeypatch):
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
     monkeypatch.setenv("ANSWER_MODEL_ROUTINE", "haiku-sim")
     monkeypatch.setenv("ANSWER_MODEL_HIGH", "sonnet-sim")
     monkeypatch.setenv("ANSWER_MODEL_OPUS", "opus-sim")

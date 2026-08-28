@@ -9,8 +9,9 @@ from datetime import date, timedelta
 from typing import Any, Dict, List, Literal, Optional
 
 from app.chat.pending_reservation import clear_pending, get_pending, save_pending
+from app.audit.query_trace import get_tracer
 from app.config import get_settings
-from app.llm.client import cached_system, complete
+from app.llm.client import cached_system, complete, resolve_classifier_model
 from app.reservations import store
 from app.reservations.calendar import build_calendar_payload
 from app.reservations.confirmation import (
@@ -103,7 +104,7 @@ def detect_sub_intent(query: str) -> Dict[str, Any]:
         if not get_settings().anthropic_api_key:
             raise RuntimeError("no api key")
         result = complete(
-            model=settings.classifier_model,
+            model=resolve_classifier_model(),
             system=cached_system(SUB_INTENT_SYSTEM.format(today=today)),
             messages=[{"role": "user", "content": query}],
             max_tokens=250,
@@ -167,15 +168,31 @@ def _handle_check_availability(parsed: dict) -> tuple[str, Optional[dict]]:
     gh = _resolve_guesthouse(parsed.get("guesthouse_name"))
     if not gh:
         return "No guesthouses are configured yet. Please contact HR.", None
+    tracer = get_tracer()
+    display = store.guesthouse_display_name(gh["id"])
+    if tracer:
+        tracer.agent_tool_call(
+            "RESERVATION",
+            "check_availability",
+            {
+                "guesthouse": display,
+                "checkin": parsed.get("checkin_date") or "any",
+                "checkout": parsed.get("checkout_date") or "any",
+            },
+        )
     try:
         cal = _calendar_for_parsed(parsed)
     except ValueError:
         cal = None
     if cal:
+        if tracer:
+            tracer.agent_tool_result("RESERVATION", "check_availability", "available")
         return (
-            f"Guesthouse availability at {gh['name']}.",
+            f"Guesthouse availability at {display}.",
             cal,
         )
+    if tracer:
+        tracer.agent_tool_result("RESERVATION", "check_availability", "unavailable")
     return "Could not load availability calendar.", None
 
 
@@ -310,6 +327,13 @@ def _handle_create_flow(
             from app.reservations.notifications import fire_create_notifications
 
             fire_create_notifications(res)
+            conf = res.get("confirmation_number") or ""
+            if tracer := get_tracer():
+                tracer.agent_tool_result(
+                    "RESERVATION",
+                    "create_reservation",
+                    f"submitted confirmation={conf}",
+                )
             return (
                 f"Reservation submitted!\n\n{format_reservation_summary(res)}\n\n"
                 "HR will confirm shortly. You'll receive an email when approved."
@@ -366,11 +390,28 @@ def _handle_create_flow(
 
     avail = store.get_availability(checkin, checkout, gh["id"])
     room_avail = next((r for r in avail if r["room_id"] == room["id"]), None)
+    display = store.guesthouse_display_name(gh["id"])
+    tracer = get_tracer()
+    if tracer:
+        tracer.agent_tool_call(
+            "RESERVATION",
+            "check_availability",
+            {
+                "guesthouse": display,
+                "room": room["room_number"],
+                "checkin": checkin,
+                "checkout": checkout,
+            },
+        )
     if not room_avail or not room_avail["available"]:
+        if tracer:
+            tracer.agent_tool_result("RESERVATION", "check_availability", "unavailable")
         return (
             f"Room {room['room_number']} is not available {format_date(checkin)} – "
             f"{format_date(checkout)}. Try different dates or another room."
         )
+    if tracer:
+        tracer.agent_tool_result("RESERVATION", "check_availability", "available")
 
     if not parsed.get("purpose") and not (pending and pending.get("purpose")):
         save_pending(
@@ -421,13 +462,15 @@ def handle_reservation_query(
 
     sub = parsed.get("sub_intent") or "show_details"
     calendar_payload: Optional[dict] = None
+    if tracer := get_tracer():
+        tracer.agent_step("RESERVATION", f"Sub-intent: {sub}")
 
     if sub == "check_availability":
         answer, calendar_payload = _handle_check_availability(parsed)
     elif sub == "create_reservation":
         cal = _calendar_for_parsed(parsed)
         if cal and not (pending and pending.get("step") == "confirm" and _is_confirm(query)):
-            answer = f"Guesthouse booking at {cal['guesthouse_name']}."
+            answer = f"Guesthouse booking at {cal.get('display_name') or cal['guesthouse_name']}."
             calendar_payload = cal
         else:
             answer = _handle_create_flow(user_email, session_id, query, parsed)

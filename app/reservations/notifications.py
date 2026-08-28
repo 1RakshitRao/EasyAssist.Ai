@@ -6,6 +6,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from app.audit.emailer import send_email
+from app.audit.query_trace import get_tracer
 from app.config import get_settings
 from app.reservations import store
 from app.reservations.confirmation import format_date, format_reservation_summary, nights
@@ -55,6 +56,12 @@ def notify_hr_approval_needed(res: dict) -> bool:
     recipients = _hr_recipients()
     if not recipients:
         return False
+    if tracer := get_tracer():
+        tracer.agent_tool_call(
+            "RESERVATION",
+            "notify_hr",
+            {"recipients": len(recipients), "confirmation": res.get("confirmation_number")},
+        )
     body = "\n".join(
         [
             "A guesthouse reservation needs HR approval.",
@@ -74,6 +81,12 @@ def notify_hr_approval_needed(res: dict) -> bool:
             body=body,
         ):
             ok = True
+    if tracer := get_tracer():
+        tracer.agent_tool_result(
+            "RESERVATION",
+            "notify_hr",
+            "sent" if ok else "failed",
+        )
     return ok
 
 

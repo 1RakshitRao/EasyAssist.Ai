@@ -26,6 +26,22 @@ def test_query_writes_audit_row(client, employee_headers):
     assert rows[0]["user_email"] == "employee@ampcus.com"
 
 
+def test_admin_query_not_scored(client, admin_headers):
+    set_access_restricted("admin@ampcus.com", True)
+    res = client.post(
+        "/query",
+        headers=admin_headers,
+        json={"question": "VPN broken"},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["model_used"] != "training_gate"
+    assert body.get("prompt_score") is None
+    rows = list_user_queries("admin@ampcus.com", limit=5)
+    assert rows
+    assert rows[0]["prompt_score"] is None
+
+
 def test_restricted_user_blocked(client, employee_headers):
     set_access_restricted("employee@ampcus.com", True)
     res = client.post(

@@ -6,8 +6,9 @@ import logging
 from typing import Any, Dict, List
 
 from app.agents.timing import ensure_timings, timed
+from app.audit.query_trace import get_tracer, tracer_from_state
 from app.config import get_settings
-from app.llm.client import cached_system, complete, merge_token_usage, resolve_answer_model
+from app.llm.client import cached_system, complete, merge_token_usage, is_llm_configured, resolve_answer_model
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,7 @@ def generate_answer(
             "context_used": False,
         }
 
-    if settings.llm_provider.lower() == "anthropic" and not settings.anthropic_api_key:
+    if not is_llm_configured():
         first = chunks[0].get("content") or NO_CONTEXT_ANSWER
         return {
             "answer": first[:800],
@@ -88,13 +89,27 @@ def generate_answer(
             history.append({"role": role, "content": content})
     messages = history + [{"role": "user", "content": user_msg}]
 
+    tracer = get_tracer()
     try:
+        if tracer:
+            tracer.llm_called("ANSWER", model, len(user_msg.split()))
         result = complete(
             model=model,
             system=cached_system(ANSWER_SYSTEM),
             messages=messages,
             max_tokens=1024,
         )
+        if tracer:
+            in_tok = int((result.token_usage or {}).get("input_tokens") or 0)
+            out_tok = int((result.token_usage or {}).get("output_tokens") or 0)
+            if in_tok:
+                tracer.llm_called("ANSWER", f"{result.provider}:{result.model}", in_tok)
+            tracer.llm_responded(
+                "ANSWER",
+                f"{result.provider}:{result.model}",
+                out_tok,
+                0.0,
+            )
         return {
             "answer": result.text or NO_CONTEXT_ANSWER,
             "model_used": f"{result.provider}:{result.model}",
@@ -113,6 +128,9 @@ def generate_answer(
 
 def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
     timings = ensure_timings(state)
+    tracer = tracer_from_state(state)
+    if tracer:
+        tracer.agent_started("ANSWER", "Generating grounded answer")
     with timed(timings, "answer"):
         result = generate_answer(
             question=state.get("query") or state.get("normalized_query") or "",
@@ -130,6 +148,12 @@ def answer_node(state: Dict[str, Any]) -> Dict[str, Any]:
             result.get("context_used"),
             len(result.get("answer") or ""),
         )
+        if tracer:
+            tracer.agent_done(
+                "ANSWER",
+                f"Answer generated ({len(result.get('answer') or '')} chars)",
+                model_used=result.get("model_used"),
+            )
         return {
             "answer": result["answer"],
             "model_used": result.get("model_used") or state.get("model_used") or "",

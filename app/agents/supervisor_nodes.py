@@ -7,9 +7,10 @@ from typing import Any, Dict
 
 from app.agents.supervisor import supervise
 from app.agents.timing import ensure_timings, timed
+from app.audit.query_trace import tracer_from_state
 from app.config import get_settings
 from app.documents.options import is_allowed_operation
-from app.llm.client import cached_system, complete, merge_token_usage
+from app.llm.client import cached_system, complete, is_llm_configured, merge_token_usage, resolve_classifier_model
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +41,7 @@ RESERVATION_STUB_ANSWER = (
 
 def supervisor_node(state: Dict[str, Any]) -> Dict[str, Any]:
     timings = ensure_timings(state)
+    tracer = tracer_from_state(state)
     with timed(timings, "supervisor"):
         result = supervise(
             state.get("query") or "",
@@ -49,6 +51,12 @@ def supervisor_node(state: Dict[str, Any]) -> Dict[str, Any]:
             joining_date=state.get("joining_date"),
             onboarding_active=bool(state.get("onboarding_active")),
         )
+        if tracer:
+            tracer.supervisor_classified(
+                result["intent"],
+                result.get("confidence") or "medium",
+                result.get("reason") or "",
+            )
         return {
             "intent": result["intent"],
             "intent_confidence": result.get("confidence") or "medium",
@@ -61,8 +69,13 @@ def supervisor_node(state: Dict[str, Any]) -> Dict[str, Any]:
 def direct_reply_node(state: Dict[str, Any]) -> Dict[str, Any]:
     timings = ensure_timings(state)
     query = state.get("query") or ""
+    tracer = tracer_from_state(state)
+    if tracer:
+        tracer.agent_started("DIRECT_REPLY", "Conversational response")
     with timed(timings, "direct_reply"):
-        if not state.get("has_document") and any(
+        from app.documents.inline_text import is_inline_text_analysis
+
+        if not state.get("has_document") and not is_inline_text_analysis(query) and any(
             w in query.lower() for w in ("summarize", "this document", "upload")
         ):
             answer = (
@@ -78,12 +91,18 @@ def direct_reply_node(state: Dict[str, Any]) -> Dict[str, Any]:
         settings = get_settings()
         try:
             result = complete(
-                model=settings.classifier_model,
+                model=resolve_classifier_model(),
                 system=cached_system(DIRECT_REPLY_SYSTEM),
                 messages=[{"role": "user", "content": query}],
                 max_tokens=200,
             )
             usage = merge_token_usage(state.get("token_usage"), result.token_usage)
+            if tracer:
+                in_tok = int((result.token_usage or {}).get("input_tokens") or 0)
+                out_tok = int((result.token_usage or {}).get("output_tokens") or 0)
+                tracer.llm_called("DIRECT_REPLY", f"{result.provider}:{result.model}", in_tok)
+                tracer.llm_responded("DIRECT_REPLY", f"{result.provider}:{result.model}", out_tok, 0.0)
+                tracer.agent_done("DIRECT_REPLY", "Reply generated")
             return {
                 "answer": (result.text or "").strip() or "Hello! How can I help you today?",
                 "model_used": f"{result.provider}:{result.model}",
@@ -102,7 +121,12 @@ def direct_reply_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
 def block_node(state: Dict[str, Any]) -> Dict[str, Any]:
     timings = ensure_timings(state)
+    tracer = tracer_from_state(state)
+    if tracer:
+        tracer.agent_started("BLOCK", "Restricted request blocked")
     with timed(timings, "block"):
+        if tracer:
+            tracer.agent_done("BLOCK", "Request blocked")
         return {
             "answer": BLOCK_ANSWER,
             "model_used": "none",
@@ -114,7 +138,12 @@ def block_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
 def decline_node(state: Dict[str, Any]) -> Dict[str, Any]:
     timings = ensure_timings(state)
+    tracer = tracer_from_state(state)
+    if tracer:
+        tracer.agent_started("DECLINE", "Out-of-scope request declined")
     with timed(timings, "decline"):
+        if tracer:
+            tracer.agent_done("DECLINE", "Request declined")
         return {
             "answer": DECLINE_ANSWER,
             "model_used": "none",
@@ -123,8 +152,24 @@ def decline_node(state: Dict[str, Any]) -> Dict[str, Any]:
         }
 
 
+def security_incident_node(state: Dict[str, Any]) -> Dict[str, Any]:
+    from app.agents.security_incident import handle_security_incident
+
+    tracer = tracer_from_state(state)
+    if tracer:
+        tracer.agent_started("SECURITY", "Processing security incident report")
+    result = handle_security_incident(state)
+    if tracer:
+        tracer.escalated(result.get("ticket_id"), ["IT Security", "Compliance"])
+        tracer.agent_done("SECURITY", f"Ticket {result.get('ticket_id') or 'opened'}")
+    return result
+
+
 def reservation_node(state: Dict[str, Any]) -> Dict[str, Any]:
     timings = ensure_timings(state)
+    tracer = tracer_from_state(state)
+    if tracer:
+        tracer.agent_started("RESERVATION", "Processing reservation request")
     with timed(timings, "reservation"):
         from app.reservations.reservation_agent import handle_reservation_query
 
@@ -133,6 +178,12 @@ def reservation_node(state: Dict[str, Any]) -> Dict[str, Any]:
             query=state.get("query") or "",
             session_id=state.get("session_id"),
         )
+        if tracer:
+            tracer.agent_done(
+                "RESERVATION",
+                "Reservation request handled",
+                model_used=result.get("model_used"),
+            )
         return {
             "answer": result.get("answer") or "",
             "department": result.get("department") or "hr",
@@ -150,6 +201,9 @@ def reservation_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
 def infrastructure_info_node(state: Dict[str, Any]) -> Dict[str, Any]:
     timings = ensure_timings(state)
+    tracer = tracer_from_state(state)
+    if tracer:
+        tracer.agent_started("INFRASTRUCTURE", "Infrastructure info query")
     with timed(timings, "infrastructure_info"):
         from app.infrastructure.info_agent import run_infrastructure_info_query
 
@@ -165,6 +219,8 @@ def infrastructure_info_node(state: Dict[str, Any]) -> Dict[str, Any]:
         node_timings = dict(result.get("node_timings") or {})
         node_timings.update(timings)
         usage = merge_token_usage(state.get("token_usage"), result.get("token_usage") or {})
+        if tracer:
+            tracer.agent_done("INFRASTRUCTURE", "Infrastructure info answered")
         return {
             "answer": result.get("answer") or "",
             "department": result.get("department") or "it",
@@ -174,11 +230,16 @@ def infrastructure_info_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "context_used": bool(result.get("context_used")),
             "token_usage": usage,
             "node_timings": node_timings,
+            "pending_ticket_confirmation": bool(result.get("pending_ticket_confirmation")),
+            "pending_ticket_payload": result.get("pending_ticket_payload"),
         }
 
 
 def infrastructure_action_node(state: Dict[str, Any]) -> Dict[str, Any]:
     timings = ensure_timings(state)
+    tracer = tracer_from_state(state)
+    if tracer:
+        tracer.agent_started("INFRASTRUCTURE", "Infrastructure action request")
     with timed(timings, "infrastructure_action"):
         from app.infrastructure.infrastructure_agent import handle_infrastructure_action
 
@@ -188,6 +249,12 @@ def infrastructure_action_node(state: Dict[str, Any]) -> Dict[str, Any]:
             session_id=state.get("session_id"),
             has_document=bool(state.get("has_document")),
         )
+        if tracer:
+            tracer.agent_done(
+                "INFRASTRUCTURE",
+                "Infrastructure action handled",
+                model_used=result.get("model_used"),
+            )
         return {
             "answer": result.get("answer") or "",
             "department": result.get("department") or "it",
@@ -202,8 +269,11 @@ def infrastructure_action_node(state: Dict[str, Any]) -> Dict[str, Any]:
 def semantic_cache_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
     timings = ensure_timings(state)
     settings = get_settings()
+    tracer = tracer_from_state(state)
     with timed(timings, "semantic_cache_check"):
         if state.get("has_prior") or not settings.semantic_cache_enabled:
+            if tracer:
+                tracer.cache_checked(False, None)
             return {"cached": False, "node_timings": timings}
 
         from app.cache.semantic_cache import get_semantic_cache
@@ -215,8 +285,12 @@ def semantic_cache_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
             department_hint=state.get("department_hint"),
         )
         if not payload:
+            if tracer:
+                tracer.cache_checked(False, similarity)
             return {"cached": False, "cache_similarity": round(similarity, 4), "node_timings": timings}
 
+        if tracer:
+            tracer.cache_checked(True, similarity)
         answer = payload.get("answer") or ""
         return {
             "answer": answer,
@@ -282,6 +356,9 @@ def semantic_cache_write_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
 def onboarding_node(state: Dict[str, Any]) -> Dict[str, Any]:
     timings = ensure_timings(state)
+    tracer = tracer_from_state(state)
+    if tracer:
+        tracer.agent_started("ONBOARDING", "Processing onboarding request")
     with timed(timings, "onboarding"):
         from app.onboarding.onboarding_agent import handle_onboarding_query
 
@@ -299,6 +376,10 @@ def onboarding_node(state: Dict[str, Any]) -> Dict[str, Any]:
         node_timings = dict(result.get("node_timings") or {})
         node_timings.update(timings)
         usage = merge_token_usage(state.get("token_usage"), result.get("token_usage") or {})
+        if tracer:
+            sub = result.get("sub_intent") or "onboarding"
+            tracer.agent_step("ONBOARDING", f"sub-intent={sub}")
+            tracer.agent_done("ONBOARDING", f"Handled {sub}")
         return {
             "answer": result.get("answer") or "",
             "department": result.get("department") or "hr",
@@ -313,11 +394,15 @@ def onboarding_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "context_used": bool(result.get("context_used")),
             "token_usage": usage,
             "node_timings": node_timings,
+            "onboarding_checklist": result.get("onboarding_checklist"),
         }
 
 
 def nlp_node(state: Dict[str, Any]) -> Dict[str, Any]:
     timings = ensure_timings(state)
+    tracer = tracer_from_state(state)
+    if tracer:
+        tracer.agent_started("NLP", "Processing NLP data query")
     with timed(timings, "nlp_query"):
         from app.auth.users import get_user_by_id
         from app.nlp_query.orchestrator import run_nlp_query
@@ -344,6 +429,10 @@ def nlp_node(state: Dict[str, Any]) -> Dict[str, Any]:
             session_id=state.get("session_id"),
         )
         usage = merge_token_usage(state.get("token_usage"), result.get("token_usage") or {})
+        if tracer:
+            allowed = bool(result.get("allowed"))
+            tracer.agent_step("NLP", f"allowed={allowed} model={result.get('model_used')}")
+            tracer.agent_done("NLP", "Query processed" if allowed else "Query blocked")
         return {
             "answer": result.get("answer") or "",
             "department": "nlp",
@@ -359,14 +448,23 @@ def nlp_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
 def document_node(state: Dict[str, Any]) -> Dict[str, Any]:
     timings = ensure_timings(state)
+    tracer = tracer_from_state(state)
     with timed(timings, "document_op"):
         from app.documents.analysis_agent import analyze_document
+        from app.documents.inline_text import (
+            extract_inline_question,
+            extract_inline_text,
+            is_inline_text_analysis,
+        )
         from app.documents.session_store import get_active_document
 
         email = str(state.get("user_email") or "")
         sid = str(state.get("session_id") or "")
+        query = state.get("query") or ""
         op = (state.get("document_operation") or "summarize").strip().lower()
         role = str(state.get("user_role") or "employee")
+        if tracer:
+            tracer.agent_started("DOCUMENT", f"Document operation: {op}")
 
         if op == "push_to_kb":
             return {
@@ -388,24 +486,50 @@ def document_node(state: Dict[str, Any]) -> Dict[str, Any]:
             }
 
         doc = get_active_document(sid, email, include_text=True)
-        if not doc or not doc.get("text"):
+        inline = is_inline_text_analysis(query)
+        filename = "document"
+        text = ""
+
+        if doc and doc.get("text"):
+            text = str(doc["text"])
+            filename = str(doc.get("filename") or "document")
+        elif inline:
+            text = extract_inline_text(query, op)
+            filename = "pasted-text"
+        else:
             return {
                 "answer": (
-                    "No active document found for this session. "
-                    "Upload a file in the document panel first."
+                    "Please paste your text in the message or upload a file "
+                    "in the document panel first."
                 ),
                 "department": "document",
                 "model_used": "none",
                 "node_timings": timings,
             }
 
-        question = state.get("query") if op == "ask" else None
+        if len(text.strip()) < 50:
+            return {
+                "answer": (
+                    "Please paste more text in your message or upload a document "
+                    "for me to analyze."
+                ),
+                "department": "document",
+                "model_used": "none",
+                "node_timings": timings,
+            }
+
+        question = None
+        if op == "ask":
+            question = extract_inline_question(query) if inline else query
+            if not (question or "").strip():
+                question = query
+
         try:
             analysis = analyze_document(
-                text=str(doc["text"]),
+                text=text,
                 operation=op,
                 question=question,
-                filename=str(doc.get("filename") or ""),
+                filename=filename,
             )
         except ValueError as exc:
             return {
@@ -423,13 +547,22 @@ def document_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 "node_timings": timings,
             }
 
+        answer = analysis.result
+        if inline:
+            answer += (
+                "\n\nAlso try: Key takeaways · Explain simply · "
+                "Action items · Find risks"
+            )
+
         usage = merge_token_usage(state.get("token_usage"), analysis.token_usage)
+        if tracer:
+            tracer.agent_done("DOCUMENT", f"Analysis complete ({op})")
         return {
-            "answer": analysis.result,
+            "answer": answer,
             "department": "document",
             "model_used": analysis.model_used or "document_pipeline",
             "context_used": True,
             "token_usage": usage,
-            "document_id": str(doc.get("doc_id") or ""),
+            "document_id": str((doc or {}).get("doc_id") or ""),
             "node_timings": timings,
         }

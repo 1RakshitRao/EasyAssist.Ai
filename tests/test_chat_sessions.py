@@ -86,7 +86,8 @@ def test_ensure_session_rejects_foreign_owner(chat_db):
 
 
 def test_generate_answer_passes_history_to_complete(monkeypatch):
-    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+    monkeypatch.setenv("LLM_PROVIDER", "grok")
+    monkeypatch.setenv("XAI_API_KEY", "test-key")
     get_settings.cache_clear()
     captured = {}
 
@@ -96,7 +97,7 @@ def test_generate_answer_passes_history_to_complete(monkeypatch):
             text="Sick leave is 10 days.",
             model="test",
             token_usage={"input_tokens": 10, "output_tokens": 5},
-            provider="ollama",
+            provider="grok",
         )
 
     history = [

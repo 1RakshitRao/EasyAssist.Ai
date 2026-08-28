@@ -132,6 +132,12 @@ def run_nlp_query(
         }
 
     sql_result = run_sql_agent(access.rewritten_question, access.allowed_tables)
+    from app.audit.query_trace import get_tracer
+
+    if tracer := get_tracer():
+        sql_preview = (sql_result.sql or "")[:80]
+        tracer.agent_step("NLP", f"SQL generated: {sql_preview}")
+        tracer.agent_step("NLP", f"rows={len(sql_result.rows or [])}")
     display_sql = sql_result.sql_formatted or (
         format_sql(sql_result.sql) if sql_result.sql else None
     )

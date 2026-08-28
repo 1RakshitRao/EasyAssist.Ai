@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 
 from app.audit.store import append_event
 from app.documents.chunker import chunk_text
-from app.llm.client import complete, resolve_answer_model
+from app.llm.client import complete, resolve_tier_model
 from app.rag.chroma_store import DEPARTMENTS, NearDuplicateError, get_store
 
 logger = logging.getLogger(__name__)
@@ -47,7 +47,7 @@ def suggest_department(text: str, filename: str = "") -> str:
         return best
 
     try:
-        model = resolve_answer_model("routine", preference="routine")
+        model = resolve_tier_model("balanced")
         result = complete(
             model=model,
             system=(

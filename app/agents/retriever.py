@@ -6,6 +6,7 @@ import logging
 from typing import Any, Dict, List, Optional
 
 from app.agents.timing import ensure_timings, timed
+from app.audit.query_trace import tracer_from_state
 from app.config import get_settings
 from app.rag.chroma_store import DEPARTMENTS, get_store
 
@@ -36,6 +37,10 @@ def _retrieve_all_departments(query: str, top_k: int) -> List[Dict[str, Any]]:
 def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """LangGraph node: retrieve from one dept, or all depts when classification is unknown."""
     timings = ensure_timings(state)
+    tracer = tracer_from_state(state)
+    if tracer:
+        dept_hint = state.get("department") or "unknown"
+        tracer.agent_started("RETRIEVER", f"Retrieving KB chunks (dept={dept_hint})")
     with timed(timings, "retrieve"):
         settings = get_settings()
         department = (state.get("department") or "hr").lower()
@@ -84,6 +89,16 @@ def retrieve_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 )
 
         sources = [c.get("title") or c.get("id") or "" for c in chunks]
+        if tracer:
+            top_score = 0.0
+            if chunks:
+                dist = chunks[0].get("distance")
+                top_score = 1.0 - float(dist) if dist is not None else 0.0
+            tracer.kb_retrieved(department, len(chunks), top_score)
+            tracer.agent_done(
+                "RETRIEVER",
+                f"{len(chunks)} chunks from {department}",
+            )
         updates: Dict[str, Any] = {
             "chunks": chunks,
             "sources": sources,

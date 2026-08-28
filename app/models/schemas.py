@@ -50,6 +50,56 @@ class QueryResponse(BaseModel):
     block_kind: Optional[str] = None
     pending_ticket_confirmation: bool = False
     reservation_calendar: Optional[Dict[str, Any]] = None
+    onboarding_checklist: Optional[Dict[str, Any]] = None
+    assistant_message_id: Optional[str] = None
+
+
+class AnswerFeedbackRequest(BaseModel):
+    message_id: str = Field(..., min_length=1)
+    session_id: Optional[str] = None
+    question: str = Field(..., min_length=1)
+    answer: str = Field(..., min_length=1)
+    rating: str = Field(..., description="up | down")
+    comment: Optional[str] = None
+    corrected_answer: Optional[str] = None
+    department: Optional[str] = None
+    sources: List[str] = Field(default_factory=list)
+
+
+class AnswerFeedbackItem(BaseModel):
+    id: str
+    created_at: str
+    user_email: str
+    session_id: Optional[str] = None
+    message_id: str
+    question: str
+    answer: str
+    rating: str
+    comment: Optional[str] = None
+    corrected_answer: Optional[str] = None
+    department: Optional[str] = None
+    sources: List[str] = Field(default_factory=list)
+    status: str
+    kb_doc_id: Optional[str] = None
+    applied_by: Optional[str] = None
+    applied_at: Optional[str] = None
+
+
+class AnswerFeedbackApplyRequest(BaseModel):
+    department: Optional[str] = None
+    answer: Optional[str] = Field(
+        default=None,
+        description="Override answer text promoted to KB (defaults to corrected_answer or original)",
+    )
+    title: Optional[str] = None
+
+
+class AnswerFeedbackApplyResponse(BaseModel):
+    status: str
+    kb_doc_id: str
+    feedback: AnswerFeedbackItem
+    duplicate_of: Optional[str] = None
+    duplicate_title: Optional[str] = None
 
 
 class SessionCreateResponse(BaseModel):
@@ -140,6 +190,10 @@ class TicketResponse(BaseModel):
     created_by_email: Optional[str] = None
     updated_by_user_id: Optional[str] = None
     updated_by_email: Optional[str] = None
+    resolved_at: Optional[str] = None
+    archived_at: Optional[str] = None
+    archived_by_user_id: Optional[str] = None
+    archived_by_email: Optional[str] = None
 
 
 class TicketResolveRequest(BaseModel):

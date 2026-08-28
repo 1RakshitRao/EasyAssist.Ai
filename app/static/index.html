@@ -6,8 +6,8 @@
   <title>Ampcus Helpdesk</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/styles.css?v=claude33" />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css?v=ghcal-glass4" />
 </head>
 <body class="is-login">
   <div id="login-screen" class="login-screen">
@@ -89,42 +89,74 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           <span class="sidebar-label">Chats</span>
         </button>
-        <button class="nav-btn" data-view="kb" data-roles="employee,agent,admin" title="Knowledge base" aria-label="Knowledge base">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M8 7h8M8 11h6"/></svg>
-          <span class="sidebar-label">Knowledge Base</span>
-        </button>
-        <button class="nav-btn" data-view="workspace" data-roles="employee,agent,admin" title="My workspace" aria-label="My workspace">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
-          <span class="sidebar-label">My Workspace</span>
-        </button>
-        <button class="nav-btn" data-view="tickets" data-roles="agent,admin" title="Tickets" aria-label="Tickets">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
-          <span class="sidebar-label">Tickets</span>
-        </button>
-        <button class="nav-btn" data-view="dashboard" data-roles="agent,admin" title="Dashboard" aria-label="Dashboard">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
-          <span class="sidebar-label">Dashboard</span>
-        </button>
-        <button class="nav-btn" data-view="insights" data-roles="admin" title="Query insights" aria-label="Query insights">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-6 4 3 5-8"/></svg>
-          <span class="sidebar-label">Query Insights</span>
-        </button>
-        <button class="nav-btn" data-view="attribution" data-roles="admin" title="User attribution" aria-label="User attribution">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          <span class="sidebar-label">User Attribution</span>
-        </button>
-        <button class="nav-btn" data-view="nlp-logs" data-roles="admin" title="Company data logs" aria-label="Company data logs">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
-          <span class="sidebar-label">Data Logs</span>
-        </button>
-        <button class="nav-btn" data-view="onboarding" data-roles="admin" title="Employee onboarding" aria-label="Employee onboarding">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11v6"/><path d="M19 14h6"/><path d="M19 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-          <span class="sidebar-label">Onboarding</span>
-        </button>
-        <button class="nav-btn" data-view="reservations" data-roles="admin" title="Guesthouse reservations" aria-label="Guesthouse reservations">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-          <span class="sidebar-label">Guesthouses</span>
-        </button>
+
+        <div class="nav-section" data-nav-section="knowledge">
+          <button type="button" class="nav-section-label sidebar-label" aria-expanded="true" aria-controls="nav-section-knowledge-items">
+            <span>Knowledge</span>
+          </button>
+          <div class="nav-section-items" id="nav-section-knowledge-items">
+            <button class="nav-btn" data-view="kb" data-roles="agent,admin" title="Knowledge base" aria-label="Knowledge base">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M8 7h8M8 11h6"/></svg>
+              <span class="sidebar-label">Knowledge Base</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="nav-section" data-nav-section="admin-hub">
+          <button type="button" class="nav-section-label sidebar-label" aria-expanded="true" aria-controls="nav-section-admin-hub-items">
+            <span>Admin Hub</span>
+          </button>
+          <div class="nav-section-items" id="nav-section-admin-hub-items">
+            <button class="nav-btn" data-view="workspace" data-roles="employee,agent,admin" title="My workspace" aria-label="My workspace">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+              <span class="sidebar-label">My Workspace</span>
+            </button>
+            <button class="nav-btn" data-view="tickets" data-roles="agent,admin" title="My tickets" aria-label="My tickets">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+              <span class="sidebar-label">My Tickets</span>
+            </button>
+            <button class="nav-btn" data-view="reservations" data-roles="admin" title="Guesthouse reservations" aria-label="Guesthouse reservations">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              <span class="sidebar-label">Guesthouses</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="nav-section" data-nav-section="org" data-roles="admin">
+          <button type="button" class="nav-section-label sidebar-label" aria-expanded="true" aria-controls="nav-section-org-items">
+            <span>Org &amp; Employees</span>
+          </button>
+          <div class="nav-section-items" id="nav-section-org-items">
+            <button class="nav-btn" data-view="onboarding" data-roles="admin" title="Employee onboarding" aria-label="Employee onboarding">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11v6"/><path d="M19 14h6"/><path d="M19 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <span class="sidebar-label">Onboarding</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="nav-section" data-nav-section="analytics" data-roles="agent,admin">
+          <button type="button" class="nav-section-label sidebar-label" aria-expanded="true" aria-controls="nav-section-analytics-items">
+            <span>Analytics</span>
+          </button>
+          <div class="nav-section-items" id="nav-section-analytics-items">
+            <button class="nav-btn" data-view="dashboard" data-roles="agent,admin" title="Dashboard" aria-label="Dashboard">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>
+              <span class="sidebar-label">Dashboard</span>
+            </button>
+            <button class="nav-btn" data-view="insights" data-roles="agent,admin" title="Query insights" aria-label="Query insights">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-6 4 3 5-8"/></svg>
+              <span class="sidebar-label">Query Insights</span>
+            </button>
+            <button class="nav-btn" data-view="attribution" data-roles="admin" title="User attribution" aria-label="User attribution">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+              <span class="sidebar-label">User Attribution</span>
+            </button>
+            <button class="nav-btn" data-view="nlp-logs" data-roles="admin" title="Company data logs" aria-label="Company data logs">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5"/><path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6"/></svg>
+              <span class="sidebar-label">Data Logs</span>
+            </button>
+          </div>
+        </div>
       </nav>
       <div class="sidebar-recents" id="sidebar-recents">
         <p class="sidebar-section-label sidebar-label">Recents</p>
@@ -348,7 +380,7 @@
             <div class="chat-home-hero" id="chat-home-hero">
               <h1 class="chat-greeting">
                 <span class="chat-spark" aria-hidden="true"></span>
-                Hello, Ampcus <span id="chat-user-role">employee</span>!
+                Hello, Ampcus <span id="chat-user-role">Employee</span>!
               </h1>
             </div>
 
@@ -609,6 +641,16 @@
           </div>
         </div>
 
+        <article class="panel board-archive-panel">
+          <div class="panel-head">
+            <h3>Archive</h3>
+            <p>Resolved tickets removed from the board. Only Done items can be moved to the archive.</p>
+          </div>
+          <div class="table-wrap" id="board-archive-body">
+            <p class="empty">Loading…</p>
+          </div>
+        </article>
+
         <div class="board-modal" id="board-detail" hidden>
           <div class="board-modal-backdrop" id="board-detail-backdrop"></div>
           <div class="board-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="board-detail-title">
@@ -672,6 +714,7 @@
                   <button type="button" class="chip" id="board-detail-assign">Assign / In Progress</button>
                   <button type="button" class="chip" id="board-detail-resolve">Mark resolved</button>
                   <button type="button" class="chip" id="board-detail-promote">Promote to KB</button>
+                  <button type="button" class="chip" id="board-detail-archive" hidden>Move to Archive</button>
                 </div>
               </aside>
             </div>
@@ -775,6 +818,37 @@
                 </tr>
               </thead>
               <tbody></tbody>
+            </table>
+          </div>
+        </article>
+
+        <article class="panel" id="answer-feedback-panel">
+          <div class="panel-head">
+            <div>
+              <h3>Answer feedback</h3>
+              <p>Dislikes with comments — apply corrections into the KB or dismiss</p>
+            </div>
+            <div class="panel-head-actions">
+              <button type="button" class="chip" id="refresh-answer-feedback">Refresh</button>
+              <a class="chip" id="export-answer-feedback" href="/feedback/export" hidden>Export JSONL</a>
+            </div>
+          </div>
+          <div class="table-wrap">
+            <table class="insights-table" id="answer-feedback-table">
+              <thead>
+                <tr>
+                  <th>When</th>
+                  <th>User</th>
+                  <th>Question</th>
+                  <th>Feedback</th>
+                  <th>Dept</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr><td colspan="7">Loading…</td></tr>
+              </tbody>
             </table>
           </div>
         </article>
@@ -923,21 +997,25 @@
               <span>Property</span>
               <select id="res-admin-gh-select" aria-label="Guesthouse"></select>
             </label>
-            <label class="res-admin-field res-admin-field-grow">
+            <label class="res-admin-field res-admin-field-email">
               <span>Employee email</span>
               <input type="email" id="res-admin-employee-email" placeholder="employee@ampcus.com" />
             </label>
           </div>
-          <div id="res-admin-cal-host" class="res-admin-cal-host"></div>
-          <div id="res-admin-cal-detail" class="res-admin-cal-detail" hidden></div>
-          <div class="res-admin-cal-actions">
-            <button type="button" class="btn-primary" id="res-admin-cal-reserve">Reserve for employee</button>
-            <button type="button" class="chip" id="res-admin-cal-modify">Modify dates</button>
-            <button type="button" class="chip danger" id="res-admin-cal-cancel">Cancel stay</button>
-            <button type="button" class="chip" id="res-admin-cal-approve">Approve</button>
-            <button type="button" class="chip danger" id="res-admin-cal-reject">Reject</button>
+          <div class="res-admin-cal-layout">
+            <div class="res-admin-cal-main">
+              <div id="res-admin-cal-host" class="res-admin-cal-host"></div>
+              <div id="res-admin-cal-detail" class="res-admin-cal-detail" hidden></div>
+              <p id="res-admin-cal-error" class="res-admin-cal-error" hidden></p>
+            </div>
+            <div class="res-admin-cal-actions">
+              <button type="button" class="btn-primary" id="res-admin-cal-reserve">Reserve for employee</button>
+              <button type="button" class="chip" id="res-admin-cal-modify">Modify dates</button>
+              <button type="button" class="chip danger" id="res-admin-cal-cancel">Cancel stay</button>
+              <button type="button" class="chip" id="res-admin-cal-approve">Approve</button>
+              <button type="button" class="chip danger" id="res-admin-cal-reject">Reject</button>
+            </div>
           </div>
-          <p id="res-admin-cal-error" class="res-admin-cal-error" hidden></p>
         </article>
       </section>
 
@@ -1231,6 +1309,6 @@
       </button>
     </div>
   </div>
-  <script src="/static/app.js?v=claude38"></script>
+  <script src="/static/app.js?v=ghcal-glass2"></script>
 </body>
 </html>

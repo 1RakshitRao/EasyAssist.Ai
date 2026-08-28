@@ -62,6 +62,65 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       color: var(--text);
     }
     .chart-wrap { position: relative; height: 260px; }
+    .chart-panel-map { display: flex; flex-direction: column; min-height: 360px; }
+    .office-map {
+      flex: 1;
+      min-height: 320px;
+      height: 320px;
+      border-radius: 8px;
+      border: 1px solid var(--stroke);
+      background: #12151c;
+      z-index: 0;
+    }
+    .office-map-legend {
+      list-style: none;
+      margin: .75rem 0 0;
+      padding: 0;
+      display: flex;
+      flex-wrap: wrap;
+      gap: .4rem .75rem;
+      color: var(--muted);
+      font-size: .78rem;
+    }
+    .office-map-legend li {
+      display: inline-flex;
+      align-items: center;
+      gap: .35rem;
+    }
+    .office-map-legend .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent); box-shadow: 0 0 0 2px rgba(107,159,255,.25);
+    }
+    .office-map-legend .dot.hq { background: var(--good); box-shadow: 0 0 0 2px rgba(74,222,128,.25); }
+    .office-map-legend .dot.campus { background: #fb923c; box-shadow: 0 0 0 2px rgba(251,146,60,.25); }
+    .office-map-legend .note { opacity: .85; }
+    .leaflet-container { background: #12151c; font: inherit; }
+    .leaflet-tile-pane img { max-width: none !important; }
+    .leaflet-popup-content-wrapper {
+      background: var(--surface2);
+      color: var(--text);
+      border-radius: 8px;
+      border: 1px solid var(--stroke);
+      box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    }
+    .leaflet-popup-tip { background: var(--surface2); }
+    .leaflet-popup-content { margin: .65rem .85rem; font-size: .85rem; line-height: 1.4; }
+    .leaflet-popup-content strong { display: block; margin-bottom: .2rem; }
+    .leaflet-popup-content .muted { color: var(--muted); font-size: .78rem; }
+    .office-pin {
+      background: transparent; border: 0;
+    }
+    .office-pin span {
+      display: block;
+      width: 14px; height: 14px;
+      border-radius: 50% 50% 50% 0;
+      transform: rotate(-45deg);
+      background: var(--accent);
+      border: 2px solid #fff;
+      box-shadow: 0 2px 8px rgba(0,0,0,.45);
+    }
+    .office-pin.hq span { background: var(--good); }
+    .office-pin.campus span { background: #fb923c; }
     .toolbar { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin-bottom: 1.25rem; }
     .toolbar input[type=search] {
       flex: 1; min-width: 220px; background: var(--surface2); border: 1px solid var(--stroke);
@@ -125,9 +184,10 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
           <h2>Rows by category</h2>
           <div class="chart-wrap"><canvas id="chart-categories" aria-label="Rows by category"></canvas></div>
         </article>
-        <article class="chart-panel">
-          <h2>Employees by location</h2>
-          <div class="chart-wrap"><canvas id="chart-locations" aria-label="Employees by location"></canvas></div>
+        <article class="chart-panel chart-panel-map">
+          <h2>Office locations</h2>
+          <div id="office-map" class="office-map" role="img" aria-label="Office locations map"></div>
+          <ul id="office-map-legend" class="office-map-legend"></ul>
         </article>
       </div>
     </header>
@@ -141,7 +201,9 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
       Ampcus Helpdesk seed data · __RECORD_COUNT__ records · SQLite table <code>company_facts</code> in <code>audit.db</code>
     </footer>
   </div>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
   <script>
     const DATA = __DATA_JSON__;
     const CHART_COLORS = ['#4ade80', '#60a5fa', '#6366f1', '#fb923c', '#c2410c', '#fbbf24'];
@@ -221,33 +283,181 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         .replace(' HQ', ' HQ');
     }
 
-    function renderCharts() {
-      const gridColor = '#2a3040';
-      const tickColor = '#9aa3b5';
-      const legendColor = '#e8eaef';
+    /* City-center coordinates for mappable office locations */
+    const LOCATION_COORDS = {
+      "Atlanta, GA": [33.749, -84.388],
+      "Birmingham, AL": [33.5186, -86.8104],
+      "Chantilly, VA": [38.8943, -77.4311],
+      "Charlotte, NC": [35.2271, -80.8431],
+      "Chicago, IL": [41.8781, -87.6298],
+      "Columbus, OH": [39.9612, -82.9988],
+      "Dallas, TX": [32.7767, -96.797],
+      "Denver, CO": [39.7392, -104.9903],
+      "Detroit, MI": [42.3314, -83.0458],
+      "Farmington, CT": [41.7198, -72.832],
+      "Houston, TX": [29.7604, -95.3698],
+      "Jacksonville, FL": [30.3322, -81.6557],
+      "Nashik Campus": [19.9975, 73.7898],
+      "New York, NY": [40.7128, -74.006],
+      "Newark, CA": [37.5297, -122.0402],
+      "Owings Mills, MD": [39.4195, -76.7803],
+      "Parsippany, NJ": [40.8659, -74.4171],
+      "Richmond, VA": [37.5407, -77.436],
+      "San Francisco, CA": [37.7749, -122.4194],
+      "Washington, DC": [38.9072, -77.0369],
+    };
 
-      const catCounts = DATA.categories.map(c => ({
+    function pinClass(type) {
+      const t = String(type || "").toLowerCase();
+      if (t.includes("headquarters")) return "hq";
+      if (t.includes("campus")) return "campus";
+      return "";
+    }
+
+    function renderOfficeMap() {
+      const mapEl = document.getElementById("office-map");
+      const legendEl = document.getElementById("office-map-legend");
+      if (!mapEl || typeof L === "undefined") return;
+
+      const locations = DATA.facts.filter((f) => f.category === "locations" && f.active);
+      const pins = [];
+      const unmapped = [];
+
+      for (const f of locations) {
+        const coords = LOCATION_COORDS[f.name];
+        if (!coords) {
+          unmapped.push(f);
+          continue;
+        }
+        pins.push({ fact: f, lat: coords[0], lng: coords[1] });
+      }
+
+      const map = L.map(mapEl, {
+        scrollWheelZoom: false,
+        worldCopyJump: true,
+      });
+
+      // Esri dark basemap (reliable from localhost); CARTO as fallback if a tile fails.
+      const esriDark = L.tileLayer(
+        "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
+        {
+          attribution:
+            "Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ",
+          maxZoom: 16,
+        }
+      );
+      const cartoDark = L.tileLayer(
+        "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png",
+        {
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+          subdomains: "abcd",
+          maxZoom: 19,
+        }
+      );
+      let usingFallback = false;
+      esriDark.on("tileerror", () => {
+        if (usingFallback) return;
+        usingFallback = true;
+        map.removeLayer(esriDark);
+        cartoDark.addTo(map);
+      });
+      esriDark.addTo(map);
+
+      const bounds = [];
+      for (const p of pins) {
+        const kind = pinClass(p.fact.attributes?.type);
+        const icon = L.divIcon({
+          className: "office-pin " + kind,
+          html: "<span></span>",
+          iconSize: [14, 14],
+          iconAnchor: [7, 14],
+          popupAnchor: [0, -12],
+        });
+        const emp = p.fact.attributes?.employee_count;
+        const type = p.fact.attributes?.type || "Office";
+        const city = p.fact.attributes?.city || "";
+        const country = p.fact.attributes?.country || "";
+        const place = [city, country].filter(Boolean).join(", ");
+        const popup =
+          "<strong>" +
+          esc(p.fact.name) +
+          "</strong>" +
+          '<div class="muted">' +
+          esc(type) +
+          (place ? " · " + esc(place) : "") +
+          "</div>" +
+          (emp != null && emp !== ""
+            ? '<div class="muted">Employees: ' + esc(emp) + "</div>"
+            : "") +
+          (p.fact.description
+            ? '<div class="muted" style="margin-top:.35rem">' +
+              esc(p.fact.description) +
+              "</div>"
+            : "");
+        L.marker([p.lat, p.lng], { icon })
+          .addTo(map)
+          .bindPopup(popup);
+        bounds.push([p.lat, p.lng]);
+      }
+
+      if (bounds.length) {
+        map.fitBounds(bounds, { padding: [28, 28], maxZoom: 5 });
+      } else {
+        map.setView([39.5, -98], 3);
+      }
+
+      // Leaflet sometimes needs a resize after layout
+      setTimeout(() => map.invalidateSize(), 50);
+
+      const legendBits = [
+        '<li><span class="dot"></span> U.S. office</li>',
+        '<li><span class="dot hq"></span> Headquarters</li>',
+        '<li><span class="dot campus"></span> Campus</li>',
+        '<li class="note">' + pins.length + " pinned</li>",
+      ];
+      if (unmapped.length) {
+        legendBits.push(
+          '<li class="note">Also listed (no map pin): ' +
+            unmapped.map((f) => esc(f.name)).join(", ") +
+            "</li>"
+        );
+      }
+      if (legendEl) legendEl.innerHTML = legendBits.join("");
+    }
+
+    function renderCharts() {
+      const legendColor = "#e8eaef";
+
+      const catCounts = DATA.categories.map((c) => ({
         label: fmt(c),
-        count: DATA.facts.filter(f => f.category === c).length,
+        count: DATA.facts.filter((f) => f.category === c).length,
       }));
-      new Chart(document.getElementById('chart-categories'), {
-        type: 'pie',
+      new Chart(document.getElementById("chart-categories"), {
+        type: "pie",
         data: {
-          labels: catCounts.map(c => c.label),
-          datasets: [{
-            data: catCounts.map(c => c.count),
-            backgroundColor: CHART_COLORS,
-            borderColor: '#171a22',
-            borderWidth: 2,
-          }],
+          labels: catCounts.map((c) => c.label),
+          datasets: [
+            {
+              data: catCounts.map((c) => c.count),
+              backgroundColor: CHART_COLORS,
+              borderColor: "#171a22",
+              borderWidth: 2,
+            },
+          ],
         },
         options: {
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
             legend: {
-              position: 'right',
-              labels: { color: legendColor, boxWidth: 12, padding: 10, font: { size: 12 } },
+              position: "right",
+              labels: {
+                color: legendColor,
+                boxWidth: 12,
+                padding: 10,
+                font: { size: 12 },
+              },
             },
             tooltip: {
               callbacks: {
@@ -262,57 +472,7 @@ HTML_TEMPLATE = r"""<!DOCTYPE html>
         },
       });
 
-      const locations = DATA.facts
-        .filter(f => f.category === 'locations' && f.active)
-        .map(f => ({
-          name: shortLocation(f.name),
-          employees: Number(f.attributes?.employee_count || 0),
-        }))
-        .sort((a, b) => b.employees - a.employees);
-
-      new Chart(document.getElementById('chart-locations'), {
-        type: 'bar',
-        data: {
-          labels: locations.map(l => l.name),
-          datasets: [{
-            label: 'Employees',
-            data: locations.map(l => l.employees),
-            backgroundColor: locations.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]),
-            borderRadius: 4,
-            maxBarThickness: 48,
-          }],
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: { display: false },
-            tooltip: {
-              callbacks: {
-                title: (items) => {
-                  const idx = items[0]?.dataIndex ?? 0;
-                  const full = DATA.facts.find(f => f.category === 'locations' && shortLocation(f.name) === locations[idx]?.name);
-                  return full?.name || items[0]?.label || '';
-                },
-                label(ctx) { return `Employees: ${ctx.raw}`; },
-              },
-            },
-          },
-          scales: {
-            x: {
-              ticks: { color: tickColor, font: { size: 11 } },
-              grid: { display: false },
-            },
-            y: {
-              beginAtZero: true,
-              suggestedMax: 400,
-              ticks: { color: tickColor, stepSize: 100 },
-              grid: { color: gridColor },
-              title: { display: true, text: 'Employees', color: tickColor, font: { size: 11 } },
-            },
-          },
-        },
-      });
+      renderOfficeMap();
     }
 
     renderStats();

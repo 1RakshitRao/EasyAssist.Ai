@@ -93,3 +93,16 @@ def test_complete_training_lifts(audit_env):
     complete_training(email)
     assert get_user_by_email(email)["access_restricted"] is False
     assert get_training(email)["training_completed_at"]
+
+
+def test_apply_enforcement_skips_admin(audit_env):
+    create_user(
+        email="admin@ampcus.com",
+        password="AdminPass12!",
+        role="admin",
+        name="Admin",
+    )
+    _score_events("admin@ampcus.com", [1, 1, 1, 1, 1])
+    result = apply_enforcement("admin@ampcus.com")
+    assert result["status"] == "good"
+    assert get_user_by_email("admin@ampcus.com")["access_restricted"] is False

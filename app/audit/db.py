@@ -44,6 +44,23 @@ CREATE TABLE IF NOT EXISTS audit_events (
 CREATE INDEX IF NOT EXISTS idx_audit_email_ts
 ON audit_events(user_email, timestamp DESC);
 
+CREATE TABLE IF NOT EXISTS query_traces (
+    query_id    TEXT PRIMARY KEY,
+    user_id     TEXT,
+    user_email  TEXT NOT NULL,
+    session_id  TEXT,
+    query       TEXT NOT NULL,
+    intent      TEXT,
+    target_node TEXT,
+    model_used  TEXT,
+    duration_ms REAL DEFAULT 0,
+    steps_json  TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_query_traces_email_ts
+ON query_traces(user_email, created_at DESC);
+
 CREATE TABLE IF NOT EXISTS user_training (
     user_email TEXT PRIMARY KEY,
     rolling_avg_score REAL DEFAULT 0,
@@ -323,6 +340,34 @@ CREATE TABLE IF NOT EXISTS conference_rooms (
 
 CREATE INDEX IF NOT EXISTS idx_conference_rooms_office
 ON conference_rooms(office_location, active);
+
+CREATE TABLE IF NOT EXISTS answer_feedback (
+    id TEXT PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    user_email TEXT NOT NULL,
+    session_id TEXT,
+    message_id TEXT NOT NULL,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    rating TEXT NOT NULL,
+    comment TEXT,
+    corrected_answer TEXT,
+    department TEXT,
+    sources_json TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    kb_doc_id TEXT,
+    applied_by TEXT,
+    applied_at TEXT
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_answer_feedback_message_user
+ON answer_feedback(message_id, user_email);
+
+CREATE INDEX IF NOT EXISTS idx_answer_feedback_status_created
+ON answer_feedback(status, created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_answer_feedback_session
+ON answer_feedback(session_id, user_email);
 """
 
 
@@ -351,6 +396,7 @@ def init_audit_db() -> None:
             conn.executescript(_SCHEMA)
             _migrate_chat_documents(conn)
             _migrate_chat_sessions(conn)
+            _migrate_audit_events(conn)
             conn.commit()
         _initialized = True
         logger.info("Audit SQLite ready path=%s", path)
@@ -444,3 +490,19 @@ def _migrate_chat_sessions(conn: sqlite3.Connection) -> None:
             "ALTER TABLE chat_sessions ADD COLUMN pending_infrastructure_json TEXT"
         )
         logger.info("Added chat_sessions.pending_infrastructure_json column")
+
+
+def _migrate_audit_events(conn: sqlite3.Connection) -> None:
+    info = conn.execute("PRAGMA table_info(audit_events)").fetchall()
+    if not info:
+        return
+    cols = {r[1] for r in info}
+    if "query_id" not in cols:
+        conn.execute("ALTER TABLE audit_events ADD COLUMN query_id TEXT")
+        logger.info("Added audit_events.query_id column")
+    conn.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_audit_query_id
+        ON audit_events(query_id)
+        """
+    )

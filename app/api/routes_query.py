@@ -9,6 +9,7 @@ from typing import Optional, Tuple
 
 from fastapi import APIRouter, HTTPException
 
+from app.agents.answer_no_context import build_pending_ticket_payload
 from app.agents.graph import run_pipeline
 from app.agents.normalize import normalize_query
 from app.agents.scorer import score_prompt
@@ -18,11 +19,15 @@ from app.agents.ticket import (
     create_ticket_from_payload,
     decline_ticket_message,
 )
+from app.agents.ticket_confirm import _CONFIRM_SUFFIX
 from app.analytics.stats import record_query
 from app.audit.cost import costs_for_query
 from app.audit.enforcement import apply_enforcement
 from app.audit.store import append_event
+from app.audit.query_trace import QueryTracer
+from app.agents.graph import resolve_node_for_intent
 from app.auth.deps import CurrentUser
+from app.auth.users import is_admin_role
 from app.chat.pending_ticket import clear_pending, get_pending, save_pending
 from app.chat.store import CHAT_CONTEXT_LIMIT, ensure_session, load_history, save_message
 from app.documents.session_store import get_active_document
@@ -36,9 +41,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["query"])
 
 _RESTRICTED_ANSWER = (
-    "Your helpdesk access is temporarily limited until you complete prompt-quality training. "
-    "Open the training link from your email (or ask an admin), then click Mark complete. "
-    "Training page: /static/training.html"
+    "Your helpdesk access is temporarily limited until prompt-quality training is cleared. "
+    "Use the instructions in your training email or ask an admin to restore access."
 )
 
 _CONFIRM_LABELS = {True: "Yes, open ticket", False: "No thanks"}
@@ -88,7 +92,7 @@ def _save_assistant_message(
     session_id: str,
     user: dict,
     response: QueryResponse,
-) -> None:
+) -> str | None:
     email = str(user.get("email") or "")
     try:
         costs = costs_for_query(
@@ -98,7 +102,7 @@ def _save_assistant_message(
             severity=response.severity,
             escalated=response.escalated,
         )
-        save_message(
+        saved = save_message(
             session_id=session_id,
             user_email=email,
             role="assistant",
@@ -106,10 +110,15 @@ def _save_assistant_message(
             department=response.department,
             cost_usd=float(costs.get("cost_usd") or 0),
         )
+        msg_id = saved.get("id")
+        if msg_id:
+            response.assistant_message_id = str(msg_id)
+        return str(msg_id) if msg_id else None
     except PermissionError as exc:
         logger.warning("chat assistant persist failed: %s", exc)
     except Exception:
         logger.exception("chat assistant persist failed session=%s", session_id)
+    return None
 
 
 def _append_audit(
@@ -120,6 +129,7 @@ def _append_audit(
     score: dict | None,
     intent: str,
     from_cache: bool,
+    query_id: str | None = None,
 ) -> None:
     costs = costs_for_query(
         model_used=response.model_used,
@@ -164,6 +174,7 @@ def _append_audit(
             "answer_length": len(response.answer or ""),
             "sources": list(response.sources or []),
             "ticket_id": response.ticket_id,
+            "query_id": query_id,
         }
     )
     logger.info(
@@ -181,11 +192,34 @@ def _append_audit(
         user.get("email"),
         response.pending_ticket_confirmation,
     )
-    if score and intent not in ("restricted", "block"):
+    if score and intent not in ("restricted", "block") and not is_admin_role(
+        user.get("role")
+    ):
         apply_enforcement(str(user.get("email") or ""))
     if feedback is not None:
         response.prompt_score = prompt_score
         response.prompt_feedback = feedback
+
+
+def _persist_pending_ticket(session_id: str, result: dict, question: str) -> dict:
+    """Ensure KB-miss ticket prompts are persisted for yes/no confirmation."""
+    answer = (result.get("answer") or "").strip()
+    if _CONFIRM_SUFFIX in answer and not result.get("pending_ticket_confirmation"):
+        result["pending_ticket_confirmation"] = True
+    if not result.get("pending_ticket_confirmation"):
+        return result
+    payload = result.get("pending_ticket_payload")
+    if not payload:
+        payload = build_pending_ticket_payload(
+            {
+                **result,
+                "query": result.get("query") or question,
+                "normalized_query": result.get("normalized_query") or question,
+            }
+        )
+        result["pending_ticket_payload"] = payload
+    save_pending(session_id, payload)
+    return result
 
 
 def _result_to_response(result: dict, session_id: str) -> QueryResponse:
@@ -213,6 +247,7 @@ def _result_to_response(result: dict, session_id: str) -> QueryResponse:
         block_kind=result.get("block_kind"),
         pending_ticket_confirmation=bool(result.get("pending_ticket_confirmation")),
         reservation_calendar=result.get("reservation_calendar"),
+        onboarding_checklist=result.get("onboarding_checklist"),
     )
 
 
@@ -289,6 +324,7 @@ def query(req: QueryRequest, user: CurrentUser) -> QueryResponse:
     session_id, prior_history = _resolve_session(req, user)
     has_prior = bool(prior_history)
     pending = get_pending(session_id)
+    user_email = str(user.get("email") or "")
 
     if req.confirm_ticket is not None:
         if not pending:
@@ -309,20 +345,37 @@ def query(req: QueryRequest, user: CurrentUser) -> QueryResponse:
 
     _save_user_message(session_id=session_id, user=user, question=req.question)
 
-    if user.get("access_restricted"):
-        response = QueryResponse(
-            answer=_RESTRICTED_ANSWER,
-            department="unknown",
-            severity="routine",
-            sources=[],
-            cached=False,
-            model_used="training_gate",
-            classify_reason="access_restricted",
-            context_used=False,
-            node_timings={"gate": round((time.perf_counter() - t0) * 1000, 2)},
+    if user.get("access_restricted") and not is_admin_role(user.get("role")):
+        tracer = QueryTracer(
+            user_id=str(user.get("id") or ""),
+            user_email=user_email,
+            query=req.question,
             session_id=session_id,
-            intent="restricted",
         )
+        try:
+            tracer.received(role=str(user.get("role") or "employee"), session_id=session_id)
+            tracer.supervisor_classified("restricted", "high", "access_restricted")
+            tracer.supervisor_routed("block")
+            response = QueryResponse(
+                answer=_RESTRICTED_ANSWER,
+                department="unknown",
+                severity="routine",
+                sources=[],
+                cached=False,
+                model_used="training_gate",
+                classify_reason="access_restricted",
+                context_used=False,
+                node_timings={"gate": round((time.perf_counter() - t0) * 1000, 2)},
+                session_id=session_id,
+                intent="restricted",
+            )
+            tracer.complete(
+                model_used="training_gate",
+                node="block",
+                intent="restricted",
+            )
+        finally:
+            tracer.save()
         _append_audit(
             user=user,
             question=req.question,
@@ -330,6 +383,7 @@ def query(req: QueryRequest, user: CurrentUser) -> QueryResponse:
             score=None,
             intent="restricted",
             from_cache=False,
+            query_id=tracer.query_id,
         )
         _save_assistant_message(session_id=session_id, user=user, response=response)
         payload = response.model_dump()
@@ -337,19 +391,26 @@ def query(req: QueryRequest, user: CurrentUser) -> QueryResponse:
         record_query(payload, cached=False)
         return response
 
-    with timed(timings, "normalize"):
-        normalized = normalize_query(req.question)
+    admin_user = is_admin_role(user.get("role"))
 
-    user_email = str(user.get("email") or "")
-    onboarding_active, joining_date = _onboarding_context_for_user(user_email)
-    active_doc = get_active_document(session_id, user_email, include_text=False)
-    has_document = active_doc is not None
-    document_id = str(active_doc["doc_id"]) if active_doc else None
+    tracer = QueryTracer(
+        user_id=str(user.get("id") or ""),
+        user_email=user_email,
+        query=req.question,
+        session_id=session_id,
+    )
+    tracer.received(role=str(user.get("role") or "employee"), session_id=session_id)
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        score_fut = pool.submit(score_prompt, req.question)
-        pipe_fut = pool.submit(
-            run_pipeline,
+    try:
+        with timed(timings, "normalize"):
+            normalized = normalize_query(req.question)
+
+        onboarding_active, joining_date = _onboarding_context_for_user(user_email)
+        active_doc = get_active_document(session_id, user_email, include_text=False)
+        has_document = active_doc is not None
+        document_id = str(active_doc["doc_id"]) if active_doc else None
+
+        pipe_kwargs = dict(
             query=req.question,
             normalized_query=normalized,
             department_hint=req.department_hint,
@@ -365,30 +426,51 @@ def query(req: QueryRequest, user: CurrentUser) -> QueryResponse:
             onboarding_active=onboarding_active,
             has_prior=has_prior,
             include_welcome=not has_prior,
+            tracer=tracer,
         )
-        score = score_fut.result()
-        result = pipe_fut.result()
 
-    node_timings = dict(result.get("node_timings") or {})
-    node_timings.update(timings)
-    result["node_timings"] = node_timings
+        if admin_user:
+            score = None
+            result = run_pipeline(**pipe_kwargs)
+        else:
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                score_fut = pool.submit(score_prompt, req.question)
+                pipe_fut = pool.submit(run_pipeline, **pipe_kwargs)
+                score = score_fut.result()
+                result = pipe_fut.result()
 
-    if result.get("pending_ticket_confirmation") and result.get("pending_ticket_payload"):
-        save_pending(session_id, result["pending_ticket_payload"])
+        node_timings = dict(result.get("node_timings") or {})
+        node_timings.update(timings)
+        result["node_timings"] = node_timings
 
-    response = _result_to_response(result, session_id)
-    audit_intent = response.intent or "helpdesk_query"
+        result = _persist_pending_ticket(session_id, result, req.question)
 
-    _append_audit(
-        user=user,
-        question=req.question,
-        response=response,
-        score=score,
-        intent=audit_intent,
-        from_cache=bool(response.cached),
-    )
-    _save_assistant_message(session_id=session_id, user=user, response=response)
-    payload = response.model_dump()
-    payload["_question"] = req.question
-    record_query(payload, cached=bool(response.cached))
-    return response
+        response = _result_to_response(result, session_id)
+        audit_intent = response.intent or "helpdesk_query"
+
+        tracer.complete(
+            model_used=response.model_used or "unknown",
+            node=resolve_node_for_intent(audit_intent),
+            intent=audit_intent,
+        )
+
+        _append_audit(
+            user=user,
+            question=req.question,
+            response=response,
+            score=score,
+            intent=audit_intent,
+            from_cache=bool(response.cached),
+            query_id=tracer.query_id,
+        )
+        _save_assistant_message(session_id=session_id, user=user, response=response)
+        payload = response.model_dump()
+        payload["_question"] = req.question
+        record_query(payload, cached=bool(response.cached))
+        return response
+    except Exception as exc:
+        tracer.error("SYSTEM", "Unhandled error", exc=exc)
+        tracer.complete(model_used="error", node="error", intent="error")
+        raise
+    finally:
+        tracer.save()

@@ -21,7 +21,7 @@ def save_pending(session_id: str, payload: Dict[str, Any]) -> None:
     blob = json.dumps(payload)
     with _lock:
         with connect() as conn:
-            conn.execute(
+            cur = conn.execute(
                 """
                 UPDATE chat_sessions
                 SET pending_ticket_json = ?
@@ -30,6 +30,12 @@ def save_pending(session_id: str, payload: Dict[str, Any]) -> None:
                 (blob, sid),
             )
             conn.commit()
+            if cur.rowcount == 0:
+                logger.warning(
+                    "pending ticket not saved — no chat_sessions row for session=%s",
+                    sid,
+                )
+                return
     logger.info("pending ticket saved session=%s", sid)
 
 

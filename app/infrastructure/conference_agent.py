@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Literal, Optional
 from app.chat.pending_infrastructure import clear_pending, get_pending, save_pending
 from app.config import get_settings
 from app.infrastructure import graph_calendar, store
-from app.llm.client import cached_system, complete
+from app.llm.client import cached_system, complete, resolve_classifier_model
 
 logger = logging.getLogger(__name__)
 
@@ -74,7 +74,7 @@ def _keyword_sub_intent(query: str) -> Dict[str, Any]:
 def _classify_sub_intent(query: str) -> Dict[str, Any]:
     try:
         llm = complete(
-            model=get_settings().classifier_model,
+            model=resolve_classifier_model(),
             system=cached_system(SUB_INTENT_SYSTEM.format(today=_today())),
             messages=[{"role": "user", "content": query}],
             max_tokens=200,

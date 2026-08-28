@@ -49,3 +49,5 @@ class HelpdeskState(TypedDict, total=False):
     pending_ticket_payload: Optional[Dict[str, Any]]
     kb_miss_query: Optional[str]
     reservation_calendar: Optional[Dict[str, Any]]
+    onboarding_checklist: Optional[Dict[str, Any]]
+    tracer: Any

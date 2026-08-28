@@ -155,6 +155,11 @@ def test_handle_checklist_no_llm(onboarding_db):
     )
     assert result["model_used"] == "onboarding_agent"
     assert "PENDING" in result["answer"] or "tasks complete" in result["answer"]
+    checklist = result.get("onboarding_checklist")
+    assert checklist
+    assert checklist["total"] >= 1
+    assert "pending_by_category" in checklist
+    assert checklist["title"] == "Your Onboarding Progress"
 
 
 def test_mark_complete_updates_db(onboarding_db):

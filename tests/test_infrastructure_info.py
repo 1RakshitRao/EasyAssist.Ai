@@ -26,6 +26,40 @@ def test_supervisor_routes_infrastructure_info_keyword():
 
 @patch("app.infrastructure.info_agent.classify_node")
 @patch("app.infrastructure.info_agent.retrieve_node")
+@patch("app.infrastructure.info_agent.answer_no_context_node")
+def test_run_infrastructure_info_kb_miss_pending_ticket(
+    mock_no_context, mock_retrieve, mock_classify
+):
+    from app.infrastructure.info_agent import run_infrastructure_info_query
+
+    mock_classify.return_value = {"department": "it", "severity": "routine", "token_usage": {}}
+    mock_retrieve.return_value = {
+        "chunks": [],
+        "sources": [],
+        "context_used": False,
+        "token_usage": {},
+    }
+    mock_no_context.return_value = {
+        "answer": "I couldn't find information about this in our knowledge base.\n\n"
+        "Would you like me to open a support ticket for human review?",
+        "model_used": "no_context",
+        "context_used": False,
+        "token_usage": {},
+        "pending_ticket_confirmation": True,
+        "pending_ticket_payload": {"question": "unknown widget?", "ticket_type": "unknown"},
+    }
+
+    result = run_infrastructure_info_query(
+        query="unknown widget?",
+        normalized_query="unknown widget?",
+        user_email="employee@ampcus.com",
+    )
+    assert result["pending_ticket_confirmation"] is True
+    assert result["pending_ticket_payload"]["question"] == "unknown widget?"
+
+
+@patch("app.infrastructure.info_agent.classify_node")
+@patch("app.infrastructure.info_agent.retrieve_node")
 @patch("app.infrastructure.info_agent.answer_node")
 def test_run_infrastructure_info_query(mock_answer, mock_retrieve, mock_classify):
     from app.infrastructure.info_agent import run_infrastructure_info_query
